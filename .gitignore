@@ -1,0 +1,24 @@
+# Rust build artifacts
+/target
+
+# Backup files
+**/*.rs.bk
+
+# WASM build artifacts (generated, not source)
+*.wasm
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Soroban / Stellar CLI local state
+.soroban/
+
+# NOTE: Cargo.lock is intentionally committed for contract crates
+# to ensure reproducible builds.
