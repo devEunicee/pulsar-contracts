@@ -447,7 +447,8 @@ impl PaymentContract {
         Ok(())
     }
 
-    pub fn execute_refund(env: Env, refund_id: String) -> Result<(), PaymentError> {
+    pub fn execute_refund(env: Env, caller: Address, refund_id: String) -> Result<(), PaymentError> {
+        caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
 
@@ -458,7 +459,9 @@ impl PaymentContract {
         let mut record = storage::get_payment(&env, &refund.order_id)
             .ok_or(PaymentError::PaymentNotFound)?;
 
-        record.merchant_address.require_auth();
+        if caller != record.merchant_address {
+            return Err(PaymentError::Unauthorized);
+        }
 
         let token_client = token::Client::new(&env, &record.token);
         token_client.transfer(&record.merchant_address, &record.payer, &refund.amount);

@@ -307,7 +307,7 @@ fn test_successful_refund_flow() {
     let status = client.get_refund_status(&str(&env, "REFUND_001"));
     assert_eq!(status, RefundStatus::Approved);
 
-    client.execute_refund(&str(&env, "REFUND_001"));
+    client.execute_refund(&merchant, &str(&env, "REFUND_001"));
     let status = client.get_refund_status(&str(&env, "REFUND_001"));
     assert_eq!(status, RefundStatus::Completed);
 
@@ -410,6 +410,19 @@ fn test_get_merchant_payment_history() {
     );
     assert_eq!(page.total, 3);
     assert_eq!(page.records.get(0).unwrap().amount, 300);
+}
+
+#[test]
+fn test_execute_refund_unauthorized_fails() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    client.initiate_refund(&payer, &str(&env, "R1"), &str(&env, "ORDER_001"), &500, &str(&env, "reason"));
+    client.approve_refund(&merchant, &str(&env, "R1"));
+
+    let other = Address::generate(&env);
+    let result = client.try_execute_refund(&other, &str(&env, "R1"));
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
 }
 
 // ── Multisig tests ────────────────────────────────────────────────────────────
@@ -558,7 +571,7 @@ fn test_get_global_stats_with_filtering() {
     client.initiate_refund(&payer, &str(&env, "R1"), &str(&env, "ORDER_001"), &500, &str(&env, "reason"));
     client.approve_refund(&merchant, &str(&env, "R1"));
     env.ledger().with_mut(|l| l.timestamp = 4000);
-    client.execute_refund(&str(&env, "R1"));
+    client.execute_refund(&merchant, &str(&env, "R1"));
 
     // Unfiltered
     let stats = client.get_global_payment_stats(&admin, &None, &None);
