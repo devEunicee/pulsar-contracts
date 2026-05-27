@@ -19,7 +19,7 @@ pub enum PaymentError {
     InvalidAmount = 22,
     InvalidSignature = 23,
     PaymentExpired = 24,
-    InsufficientBalance = 25,
+    // InsufficientBalance removed: token transfers from SDK panic on insufficient funds
 
     // Refund
     RefundNotFound = 30,

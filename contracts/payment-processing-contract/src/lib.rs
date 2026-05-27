@@ -221,29 +221,9 @@ impl PaymentContract {
         order_id: String,
         refunded_amount: i128,
     ) -> Result<(), PaymentError> {
-        caller.require_auth();
-        let mut record =
-            storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
-
-        let admin = storage::get_admin(&env);
-        if caller != record.merchant_address && admin.as_ref() != Some(&caller) {
-            return Err(PaymentError::Unauthorized);
-        }
-
-        helper::validate_amount(refunded_amount)?;
-        let new_total = record.refunded_amount + refunded_amount;
-        if new_total > record.amount {
-            return Err(PaymentError::RefundAmountExceedsPayment);
-        }
-
-        record.refunded_amount = new_total;
-        record.status = if new_total == record.amount {
-            PaymentStatus::FullyRefunded
-        } else {
-            PaymentStatus::PartiallyRefunded
-        };
-        storage::save_payment(&env, &record);
-        Ok(())
+        // Intentionally removed from public ABI: refund state must be modified
+        // exclusively via the refund workflow (initiate/approve/execute).
+        Err(PaymentError::InvalidInput)
     }
 
     pub fn archive_payment_record(
@@ -467,6 +447,12 @@ impl PaymentContract {
             executed: false,
             created_at: env.ledger().timestamp(),
         };
+        // Move funds from initiator into contract escrow to lock them.
+        let token_client = token::Client::new(&env, &ms.order.token);
+        let contract_id = env.current_contract();
+        let contract_addr = Address::Contract(contract_id);
+        token_client.transfer(&initiator, &contract_addr, &ms.order.amount);
+
         storage::save_multisig(&env, &ms);
         env.events().publish(
             (String::from_str(&env, "multisig_initiated"),),
@@ -525,13 +511,16 @@ impl PaymentContract {
             return Err(PaymentError::PaymentExpired);
         }
 
+        // Release funds from contract escrow to merchant.
         let token_client = token::Client::new(&env, &order.token);
-        token_client.transfer(&executor, &order.merchant_address, &order.amount);
+        let contract_id = env.current_contract();
+        let contract_addr = Address::Contract(contract_id);
+        token_client.transfer(&contract_addr, &order.merchant_address, &order.amount);
 
         let record = PaymentRecord {
             order_id: order.order_id.clone(),
             merchant_address: order.merchant_address.clone(),
-            payer: executor.clone(),
+            payer: ms.order.payer.clone(),
             token: order.token.clone(),
             amount: order.amount,
             refunded_amount: 0,
