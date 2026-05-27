@@ -462,10 +462,74 @@ fn test_set_cleanup_period() {
 }
 
 #[test]
-fn test_get_global_stats() {
+fn test_get_global_stats_with_filtering() {
     let (env, client) = setup();
-    let (admin, _merchant, _payer, _token) = setup_paid_order(&env, &client);
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &payer, 10000);
+
+    // Payment 1: t=1000
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let order1 = PaymentOrder {
+        order_id: str(&env, "ORDER_001"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "p1"),
+        expires_at: 0,
+    };
+    let (pk1, sig1) = sign_order(&env, &order1);
+    client.process_payment_with_signature(&payer, &order1, &sig1, &pk1);
+
+    // Payment 2: t=2000
+    env.ledger().with_mut(|l| l.timestamp = 2000);
+    let order2 = PaymentOrder {
+        order_id: str(&env, "ORDER_002"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 2000,
+        description: str(&env, "p2"),
+        expires_at: 0,
+    };
+    let (pk2, sig2) = sign_order(&env, &order2);
+    client.process_payment_with_signature(&payer, &order2, &sig2, &pk2);
+
+    // Refund for Payment 1: initiated at t=3000, executed at t=4000
+    env.ledger().with_mut(|l| l.timestamp = 3000);
+    client.initiate_refund(&payer, &str(&env, "R1"), &str(&env, "ORDER_001"), &500, &str(&env, "reason"));
+    client.approve_refund(&merchant, &str(&env, "R1"));
+    env.ledger().with_mut(|l| l.timestamp = 4000);
+    client.execute_refund(&str(&env, "R1"));
+
+    // Unfiltered
     let stats = client.get_global_payment_stats(&admin, &None, &None);
+    assert_eq!(stats.total_payments, 2);
+    assert_eq!(stats.total_volume, 3000);
+    assert_eq!(stats.total_refunds, 1);
+    assert_eq!(stats.total_refund_volume, 500);
+
+    // Filtered: only t=1000 to t=1500 (Payment 1 only)
+    let stats = client.get_global_payment_stats(&admin, &Some(500), &Some(1500));
     assert_eq!(stats.total_payments, 1);
     assert_eq!(stats.total_volume, 1000);
+    assert_eq!(stats.total_refunds, 0);
+
+    // Filtered: only t=2500 to t=3500 (Refund 1 only, because initiated_at=3000)
+    let stats = client.get_global_payment_stats(&admin, &Some(2500), &Some(3500));
+    assert_eq!(stats.total_payments, 0);
+    assert_eq!(stats.total_refunds, 1);
+    assert_eq!(stats.total_refund_volume, 500);
 }

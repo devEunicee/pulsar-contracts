@@ -143,6 +143,7 @@ impl PaymentContract {
         storage::save_payment(&env, &record);
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &payer, &order.order_id);
+        storage::push_all_payment_id(&env, &order.order_id);
         storage::increment_payment_stats(&env, order.amount);
 
         env.events().publish(
@@ -207,10 +208,61 @@ impl PaymentContract {
         date_end: Option<u64>,
     ) -> Result<GlobalStats, PaymentError> {
         helper::require_admin(&env, &admin)?;
-        // For date-filtered stats we return the stored totals (full stats).
-        // A production implementation would maintain time-bucketed counters.
-        let _ = (date_start, date_end);
-        Ok(storage::get_global_stats(&env))
+
+        if date_start.is_none() && date_end.is_none() {
+            return Ok(storage::get_global_stats(&env));
+        }
+
+        let mut stats = GlobalStats {
+            total_payments: 0,
+            total_volume: 0,
+            total_refunds: 0,
+            total_refund_volume: 0,
+        };
+
+        let p_ids = storage::get_all_payment_ids(&env);
+        for id in p_ids.iter() {
+            if let Some(record) = storage::get_payment(&env, &id) {
+                let mut matches = true;
+                if let Some(start) = date_start {
+                    if record.paid_at < start {
+                        matches = false;
+                    }
+                }
+                if let Some(end) = date_end {
+                    if record.paid_at > end {
+                        matches = false;
+                    }
+                }
+                if matches {
+                    stats.total_payments += 1;
+                    stats.total_volume += record.amount;
+                }
+            }
+        }
+
+        let r_ids = storage::get_all_refund_ids(&env);
+        for id in r_ids.iter() {
+            if let Some(record) = storage::get_refund(&env, &id) {
+                let mut matches = true;
+                if let Some(start) = date_start {
+                    if record.initiated_at < start {
+                        matches = false;
+                    }
+                }
+                if let Some(end) = date_end {
+                    if record.initiated_at > end {
+                        matches = false;
+                    }
+                }
+                if matches {
+                    stats.total_refunds += 1;
+                    stats.total_refund_volume += record.amount;
+                }
+            }
+        }
+
+        Ok(stats)
     }
 
     // ── Payment management ────────────────────────────────────────────────────
@@ -422,6 +474,7 @@ impl PaymentContract {
 
         refund.status = RefundStatus::Completed;
         storage::save_refund(&env, &refund);
+        storage::push_all_refund_id(&env, &refund_id);
         storage::increment_refund_stats(&env, refund.amount)?;
 
         env.events().publish(
@@ -541,6 +594,7 @@ impl PaymentContract {
         storage::save_payment(&env, &record);
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &executor, &order.order_id);
+        storage::push_all_payment_id(&env, &order.order_id);
         storage::increment_payment_stats(&env, order.amount);
 
         ms.executed = true;

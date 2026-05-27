@@ -79,6 +79,21 @@ pub fn push_payer_payment_id(env: &Env, payer: &Address, order_id: &String) {
         .set(&DataKey::PayerPayments(payer.clone()), &ids);
 }
 
+pub fn get_all_payment_ids(env: &Env) -> Vec<String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AllPayments)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn push_all_payment_id(env: &Env, order_id: &String) {
+    let mut ids = get_all_payment_ids(env);
+    ids.push_back(order_id.clone());
+    env.storage()
+        .persistent()
+        .set(&DataKey::AllPayments, &ids);
+}
+
 // ── Refund ────────────────────────────────────────────────────────────────────
 
 pub fn get_refund(env: &Env, refund_id: &String) -> Option<RefundRecord> {
@@ -91,6 +106,21 @@ pub fn save_refund(env: &Env, refund: &RefundRecord) {
     env.storage()
         .persistent()
         .set(&DataKey::Refund(refund.refund_id.clone()), refund);
+}
+
+pub fn get_all_refund_ids(env: &Env) -> Vec<String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AllRefunds)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn push_all_refund_id(env: &Env, refund_id: &String) {
+    let mut ids = get_all_refund_ids(env);
+    ids.push_back(refund_id.clone());
+    env.storage()
+        .persistent()
+        .set(&DataKey::AllRefunds, &ids);
 }
 
 // ── Multisig ──────────────────────────────────────────────────────────────────

@@ -164,4 +164,6 @@ pub enum DataKey {
     Multisig(String),
     CleanupPeriod,
     GlobalStats,
+    AllPayments,
+    AllRefunds,
 }
