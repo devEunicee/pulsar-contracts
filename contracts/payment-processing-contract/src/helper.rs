@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Bytes, Env, String};
+use soroban_sdk::{Address, Bytes, BytesN, Env, String};
 
 use crate::error::PaymentError;
 use crate::storage;
@@ -50,9 +50,9 @@ pub fn validate_order_id(order_id: &String) -> Result<(), PaymentError> {
 /// Verify an ed25519 signature over `payload` using `public_key`.
 pub fn verify_signature(
     env: &Env,
-    public_key: &Bytes,
+    public_key: &BytesN<32>,
     payload: &Bytes,
-    signature: &Bytes,
+    signature: &BytesN<64>,
 ) -> Result<(), PaymentError> {
     env.crypto()
         .ed25519_verify(public_key, payload, signature);

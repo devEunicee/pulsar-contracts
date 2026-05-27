@@ -9,7 +9,7 @@ mod types;
 mod test;
 
 use soroban_sdk::{
-    contract, contractimpl, token, Address, Bytes, Env, String, Vec,
+    contract, contractimpl, token, xdr::ToXdr, Address, BytesN, Env, String, Vec,
 };
 
 use error::PaymentError;
@@ -97,8 +97,8 @@ impl PaymentContract {
         env: Env,
         payer: Address,
         order: PaymentOrder,
-        signature: Bytes,
-        merchant_public_key: Bytes,
+        signature: BytesN<64>,
+        merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
         payer.require_auth();
 
@@ -121,8 +121,8 @@ impl PaymentContract {
             return Err(PaymentError::MerchantInactive);
         }
 
-        // Verify signature over order_id bytes as payload
-        let payload = Bytes::from_slice(&env, order.order_id.to_string().as_bytes());
+        // Verify signature over the full order struct
+        let payload = order.clone().to_xdr(&env);
         helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;
 
         // Transfer tokens from payer to merchant
