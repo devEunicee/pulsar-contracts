@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Bytes, Env, String};
+use soroban_sdk::{Address, Bytes, BytesN, Env, String};
 
 use crate::error::PaymentError;
 use crate::storage;
@@ -40,7 +40,7 @@ pub fn validate_amount(amount: i128) -> Result<(), PaymentError> {
 }
 
 /// Validate that `order_id` is non-empty.
-pub fn validate_order_id(order_id: &String) -> Result<(), PaymentError> {
+pub fn validate_order_id(order_id: &Bytes) -> Result<(), PaymentError> {
     if order_id.len() == 0 {
         return Err(PaymentError::InvalidInput);
     }
@@ -54,8 +54,16 @@ pub fn verify_signature(
     payload: &Bytes,
     signature: &Bytes,
 ) -> Result<(), PaymentError> {
-    env.crypto()
-        .ed25519_verify(public_key, payload, signature);
+    let pk: BytesN<32> = public_key
+        .clone()
+        .try_into()
+        .map_err(|_| PaymentError::InvalidInput)?;
+    let sig: BytesN<64> = signature
+        .clone()
+        .try_into()
+        .map_err(|_| PaymentError::InvalidInput)?;
+
+    env.crypto().ed25519_verify(&pk, payload, &sig);
     Ok(())
 }
 

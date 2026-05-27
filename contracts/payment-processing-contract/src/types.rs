@@ -37,7 +37,7 @@ pub enum PaymentStatus {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaymentOrder {
-    pub order_id: String,
+    pub order_id: Bytes,
     pub merchant_address: Address,
     pub payer: Address,
     pub token: Address,
@@ -49,7 +49,7 @@ pub struct PaymentOrder {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaymentRecord {
-    pub order_id: String,
+    pub order_id: Bytes,
     pub merchant_address: Address,
     pub payer: Address,
     pub token: Address,
@@ -73,8 +73,8 @@ pub enum RefundStatus {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefundRecord {
-    pub refund_id: String,
-    pub order_id: String,
+    pub refund_id: Bytes,
+    pub order_id: Bytes,
     pub amount: i128,
     pub reason: String,
     pub status: RefundStatus,
@@ -87,7 +87,7 @@ pub struct RefundRecord {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MultisigPayment {
-    pub payment_id: String,
+    pub payment_id: Bytes,
     pub order: PaymentOrder,
     pub required_signers: Vec<Address>,
     pub signatures: Vec<Address>,
@@ -135,7 +135,7 @@ pub struct PaymentFilter {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaymentPage {
     pub records: Vec<PaymentRecord>,
-    pub next_cursor: Option<String>,
+    pub next_cursor: Option<Bytes>,
     pub total: u32,
 }
 
@@ -157,11 +157,11 @@ pub struct GlobalStats {
 pub enum DataKey {
     Admin,
     Merchant(Address),
-    Payment(String),
+    Payment(Bytes),
     MerchantPayments(Address),
     PayerPayments(Address),
-    Refund(String),
-    Multisig(String),
+    Refund(Bytes),
+    Multisig(Bytes),
     CleanupPeriod,
     GlobalStats,
 }
