@@ -92,6 +92,7 @@ pub struct MultisigPayment {
     pub required_signers: Vec<Address>,
     pub signatures: Vec<Address>,
     pub executed: bool,
+    pub expires_at: u64,
     pub created_at: u64,
 }
 
@@ -163,5 +164,6 @@ pub enum DataKey {
     Refund(Bytes),
     Multisig(Bytes),
     CleanupPeriod,
+    DefaultMultisigExpiry,
     GlobalStats,
 }

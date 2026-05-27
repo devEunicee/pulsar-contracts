@@ -113,6 +113,8 @@ pub fn save_multisig(env: &Env, ms: &MultisigPayment) {
 pub const DEFAULT_CLEANUP_PERIOD: u64 = 7_776_000;
 /// Refund window: 30 days in seconds
 pub const REFUND_WINDOW: u64 = 2_592_000;
+/// Default multisig expiry: 24 hours in seconds
+pub const DEFAULT_MULTISIG_EXPIRY: u64 = 86_400;
 
 pub fn get_cleanup_period(env: &Env) -> u64 {
     env.storage()
@@ -125,6 +127,19 @@ pub fn set_cleanup_period(env: &Env, period: u64) {
     env.storage()
         .instance()
         .set(&DataKey::CleanupPeriod, &period);
+}
+
+pub fn get_default_multisig_expiry(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::DefaultMultisigExpiry)
+        .unwrap_or(DEFAULT_MULTISIG_EXPIRY)
+}
+
+pub fn set_default_multisig_expiry(env: &Env, expiry: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::DefaultMultisigExpiry, &expiry);
 }
 
 // ── Global stats ──────────────────────────────────────────────────────────────

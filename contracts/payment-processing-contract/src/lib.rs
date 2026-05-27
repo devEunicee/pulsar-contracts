@@ -293,6 +293,19 @@ impl PaymentContract {
         Ok(())
     }
 
+    pub fn set_default_multisig_expiry(
+        env: Env,
+        admin: Address,
+        expiry: u64,
+    ) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+        if expiry < 3600 {
+            return Err(PaymentError::InvalidInput);
+        }
+        storage::set_default_multisig_expiry(&env, expiry);
+        Ok(())
+    }
+
     // ── Refunds ───────────────────────────────────────────────────────────────
 
     pub fn initiate_refund(
@@ -467,13 +480,17 @@ impl PaymentContract {
             return Err(PaymentError::InvalidInput);
         }
 
+        let now = env.ledger().timestamp();
+        let expires_at = now + storage::get_default_multisig_expiry(&env);
+
         let ms = MultisigPayment {
             payment_id: payment_id.clone(),
             order,
             required_signers,
             signatures: Vec::new(&env),
             executed: false,
-            created_at: env.ledger().timestamp(),
+            expires_at,
+            created_at: now,
         };
         storage::save_multisig(&env, &ms);
         env.events().publish(
@@ -494,6 +511,9 @@ impl PaymentContract {
 
         if ms.executed {
             return Err(PaymentError::MultisigAlreadyExecuted);
+        }
+        if env.ledger().timestamp() > ms.expires_at {
+            return Err(PaymentError::PaymentExpired);
         }
         if !ms.required_signers.contains(&signer) {
             return Err(PaymentError::Unauthorized);
@@ -523,12 +543,15 @@ impl PaymentContract {
         if ms.executed {
             return Err(PaymentError::MultisigAlreadyExecuted);
         }
+        let now = env.ledger().timestamp();
+        if now > ms.expires_at {
+            return Err(PaymentError::PaymentExpired);
+        }
         if ms.signatures.len() < ms.required_signers.len() {
             return Err(PaymentError::InsufficientSignatures);
         }
 
         let order = &ms.order;
-        let now = env.ledger().timestamp();
         if order.expires_at > 0 && now > order.expires_at {
             return Err(PaymentError::PaymentExpired);
         }

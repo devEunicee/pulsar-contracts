@@ -496,3 +496,36 @@ fn test_update_payment_status_emits_event() {
     assert_eq!(status, PaymentStatus::PartiallyRefunded);
     assert_eq!(caller, merchant);
 }
+
+#[test]
+fn test_multisig_payment_expiry() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+    );
+
+    let order = make_order(&env, &merchant, &signer1, &token);
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+
+    client.initiate_multisig_payment(&signer1, &bytes(&env, "MS_EXPIRY"), &order, &signers);
+
+    // Fast forward 25h (default is 24h)
+    env.ledger().set_timestamp(86400 + 3601);
+
+    let result = client.try_sign_multisig_payment(&signer1, &bytes(&env, "MS_EXPIRY"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentExpired)));
+
+    let result = client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_EXPIRY"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentExpired)));
+}
