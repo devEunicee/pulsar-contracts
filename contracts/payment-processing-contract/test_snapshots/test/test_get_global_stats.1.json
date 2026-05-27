@@ -62,7 +62,7 @@
                   "string": "desc"
                 },
                 {
-                  "string": "c@c.com"
+                  "string": "c@c.com "
                 },
                 {
                   "vec": [
@@ -157,7 +157,7 @@
                         "symbol": "order_id"
                       },
                       "val": {
-                        "string": "ORDER_001"
+                        "bytes": "4f524445525f303031"
                       }
                     },
                     {
@@ -179,10 +179,10 @@
                   ]
                 },
                 {
-                  "bytes": "7ed7ba8e00ad9817fadb6c46d091aa811b056a01f107431fafacc68d807429799b54723c571de387cf327c84124feb7d368d721e2f1f5d3f57edc32c1061ec03"
+                  "bytes": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
                 },
                 {
-                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
                 }
               ]
             }
@@ -315,6 +315,49 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "GlobalPaymentIndex"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "GlobalPaymentIndex"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "bytes": "4f524445525f303031"
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
                   "symbol": "Merchant"
                 },
                 {
@@ -378,7 +421,7 @@
                         "symbol": "contact_info"
                       },
                       "val": {
-                        "string": "c@c.com"
+                        "string": "c@c.com "
                       }
                     },
                     {
@@ -452,7 +495,7 @@
                 "val": {
                   "vec": [
                     {
-                      "string": "ORDER_001"
+                      "bytes": "4f524445525f303031"
                     }
                   ]
                 }
@@ -501,7 +544,7 @@
                 "val": {
                   "vec": [
                     {
-                      "string": "ORDER_001"
+                      "bytes": "4f524445525f303031"
                     }
                   ]
                 }
@@ -522,7 +565,7 @@
                   "symbol": "Payment"
                 },
                 {
-                  "string": "ORDER_001"
+                  "bytes": "4f524445525f303031"
                 }
               ]
             },
@@ -542,7 +585,7 @@
                       "symbol": "Payment"
                     },
                     {
-                      "string": "ORDER_001"
+                      "bytes": "4f524445525f303031"
                     }
                   ]
                 },
@@ -573,7 +616,7 @@
                         "symbol": "order_id"
                       },
                       "val": {
-                        "string": "ORDER_001"
+                        "bytes": "4f524445525f303031"
                       }
                     },
                     {

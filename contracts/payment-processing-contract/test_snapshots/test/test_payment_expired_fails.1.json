@@ -62,7 +62,7 @@
                   "string": "desc"
                 },
                 {
-                  "string": "c@c.com"
+                  "string": "c@c.com "
                 },
                 {
                   "vec": [
@@ -246,7 +246,7 @@
                         "symbol": "contact_info"
                       },
                       "val": {
-                        "string": "c@c.com"
+                        "string": "c@c.com "
                       }
                     },
                     {

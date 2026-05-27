@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Env, String, Vec};
+use soroban_sdk::{Address, Bytes, Env, String, Vec};
 
 use crate::error::PaymentError;
 use crate::types::{DataKey, GlobalStats, Merchant, MultisigPayment, PaymentRecord, RefundRecord};
@@ -29,7 +29,7 @@ pub fn save_merchant(env: &Env, merchant: &Merchant) {
 
 // ── Payment ───────────────────────────────────────────────────────────────────
 
-pub fn get_payment(env: &Env, order_id: &String) -> Option<PaymentRecord> {
+pub fn get_payment(env: &Env, order_id: &Bytes) -> Option<PaymentRecord> {
     env.storage()
         .persistent()
         .get(&DataKey::Payment(order_id.clone()))
@@ -41,7 +41,7 @@ pub fn save_payment(env: &Env, record: &PaymentRecord) {
         .set(&DataKey::Payment(record.order_id.clone()), record);
 }
 
-pub fn remove_payment(env: &Env, order_id: &String) {
+pub fn remove_payment(env: &Env, order_id: &Bytes) {
     env.storage()
         .persistent()
         .remove(&DataKey::Payment(order_id.clone()));
@@ -49,14 +49,14 @@ pub fn remove_payment(env: &Env, order_id: &String) {
 
 // ── Payment index lists ───────────────────────────────────────────────────────
 
-pub fn get_merchant_payment_ids(env: &Env, merchant: &Address) -> Vec<String> {
+pub fn get_merchant_payment_ids(env: &Env, merchant: &Address) -> Vec<Bytes> {
     env.storage()
         .persistent()
         .get(&DataKey::MerchantPayments(merchant.clone()))
         .unwrap_or_else(|| Vec::new(env))
 }
 
-pub fn push_merchant_payment_id(env: &Env, merchant: &Address, order_id: &String) {
+pub fn push_merchant_payment_id(env: &Env, merchant: &Address, order_id: &Bytes) {
     let mut ids = get_merchant_payment_ids(env, merchant);
     ids.push_back(order_id.clone());
     env.storage()
@@ -64,14 +64,14 @@ pub fn push_merchant_payment_id(env: &Env, merchant: &Address, order_id: &String
         .set(&DataKey::MerchantPayments(merchant.clone()), &ids);
 }
 
-pub fn get_payer_payment_ids(env: &Env, payer: &Address) -> Vec<String> {
+pub fn get_payer_payment_ids(env: &Env, payer: &Address) -> Vec<Bytes> {
     env.storage()
         .persistent()
         .get(&DataKey::PayerPayments(payer.clone()))
         .unwrap_or_else(|| Vec::new(env))
 }
 
-pub fn push_payer_payment_id(env: &Env, payer: &Address, order_id: &String) {
+pub fn push_payer_payment_id(env: &Env, payer: &Address, order_id: &Bytes) {
     let mut ids = get_payer_payment_ids(env, payer);
     ids.push_back(order_id.clone());
     env.storage()
@@ -79,24 +79,30 @@ pub fn push_payer_payment_id(env: &Env, payer: &Address, order_id: &String) {
         .set(&DataKey::PayerPayments(payer.clone()), &ids);
 }
 
-pub fn get_all_payment_ids(env: &Env) -> Vec<String> {
+pub fn get_global_payment_ids(env: &Env) -> Vec<Bytes> {
     env.storage()
         .persistent()
-        .get(&DataKey::AllPayments)
+        .get(&DataKey::GlobalPaymentIndex)
         .unwrap_or_else(|| Vec::new(env))
 }
 
-pub fn push_all_payment_id(env: &Env, order_id: &String) {
-    let mut ids = get_all_payment_ids(env);
+pub fn push_global_payment_id(env: &Env, order_id: &Bytes) {
+    let mut ids = get_global_payment_ids(env);
     ids.push_back(order_id.clone());
     env.storage()
         .persistent()
-        .set(&DataKey::AllPayments, &ids);
+        .set(&DataKey::GlobalPaymentIndex, &ids);
+}
+
+pub fn set_global_payment_ids(env: &Env, ids: &Vec<Bytes>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalPaymentIndex, ids);
 }
 
 // ── Refund ────────────────────────────────────────────────────────────────────
 
-pub fn get_refund(env: &Env, refund_id: &String) -> Option<RefundRecord> {
+pub fn get_refund(env: &Env, refund_id: &Bytes) -> Option<RefundRecord> {
     env.storage()
         .persistent()
         .get(&DataKey::Refund(refund_id.clone()))
@@ -125,7 +131,7 @@ pub fn push_all_refund_id(env: &Env, refund_id: &String) {
 
 // ── Multisig ──────────────────────────────────────────────────────────────────
 
-pub fn get_multisig(env: &Env, payment_id: &String) -> Option<MultisigPayment> {
+pub fn get_multisig(env: &Env, payment_id: &Bytes) -> Option<MultisigPayment> {
     env.storage()
         .persistent()
         .get(&DataKey::Multisig(payment_id.clone()))
@@ -143,6 +149,8 @@ pub fn save_multisig(env: &Env, ms: &MultisigPayment) {
 pub const DEFAULT_CLEANUP_PERIOD: u64 = 7_776_000;
 /// Refund window: 30 days in seconds
 pub const REFUND_WINDOW: u64 = 2_592_000;
+/// Default multisig expiry: 24 hours in seconds
+pub const DEFAULT_MULTISIG_EXPIRY: u64 = 86_400;
 
 pub fn get_cleanup_period(env: &Env) -> u64 {
     env.storage()
@@ -155,6 +163,19 @@ pub fn set_cleanup_period(env: &Env, period: u64) {
     env.storage()
         .instance()
         .set(&DataKey::CleanupPeriod, &period);
+}
+
+pub fn get_default_multisig_expiry(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::DefaultMultisigExpiry)
+        .unwrap_or(DEFAULT_MULTISIG_EXPIRY)
+}
+
+pub fn set_default_multisig_expiry(env: &Env, expiry: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::DefaultMultisigExpiry, &expiry);
 }
 
 // ── Global stats ──────────────────────────────────────────────────────────────
