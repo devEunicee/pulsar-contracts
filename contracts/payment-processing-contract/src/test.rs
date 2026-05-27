@@ -1,10 +1,15 @@
 #![cfg(test)]
 
+extern crate alloc;
+use alloc::vec;
+
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token::StellarAssetClient,
-    Address, Bytes, Env, String, Vec,
+    Address, BytesN, Env, String, Vec,
 };
+
+use ed25519_dalek::{Signer, SigningKey};
 
 use crate::{
     error::PaymentError,
@@ -12,7 +17,25 @@ use crate::{
     PaymentContract, PaymentContractClient,
 };
 
+use soroban_sdk::xdr::ToXdr;
+
 // ── Test helpers ──────────────────────────────────────────────────────────────
+
+fn sign_order(env: &Env, order: &PaymentOrder) -> (BytesN<32>, BytesN<64>) {
+    let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+    let public_key = signing_key.verifying_key();
+
+    let payload = order.clone().to_xdr(env);
+    let mut payload_bytes = vec![0u8; payload.len() as usize];
+    payload.copy_into_slice(&mut payload_bytes);
+
+    let signature = signing_key.sign(&payload_bytes);
+
+    (
+        BytesN::from_array(env, &public_key.to_bytes()),
+        BytesN::from_array(env, &signature.to_bytes()),
+    )
+}
 
 fn setup() -> (Env, PaymentContractClient<'static>) {
     let env = Env::default();
@@ -27,7 +50,7 @@ fn create_token(env: &Env, admin: &Address) -> Address {
     token_id.address()
 }
 
-fn mint(env: &Env, token: &Address, admin: &Address, to: &Address, amount: i128) {
+fn mint(env: &Env, token: &Address, _admin: &Address, to: &Address, amount: i128) {
     StellarAssetClient::new(env, token).mint(to, &amount);
 }
 
@@ -143,9 +166,7 @@ fn test_successful_payment_with_signature() {
     mint(&env, &token, &admin, &payer, 5000);
 
     let order = make_order(&env, &merchant, &payer, &token);
-    // Use a dummy 32-byte public key and 64-byte signature (mock_all_auths bypasses crypto)
-    let pub_key = Bytes::from_array(&env, &[0u8; 32]);
-    let sig = Bytes::from_array(&env, &[0u8; 64]);
+    let (pub_key, sig) = sign_order(&env, &order);
 
     client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
 
@@ -173,8 +194,7 @@ fn test_duplicate_payment_fails() {
     mint(&env, &token, &admin, &payer, 5000);
 
     let order = make_order(&env, &merchant, &payer, &token);
-    let pub_key = Bytes::from_array(&env, &[0u8; 32]);
-    let sig = Bytes::from_array(&env, &[0u8; 64]);
+    let (pub_key, sig) = sign_order(&env, &order);
 
     client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
     let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
@@ -204,10 +224,39 @@ fn test_payment_expired_fails() {
     let mut order = make_order(&env, &merchant, &payer, &token);
     order.expires_at = 1000; // already expired
 
-    let pub_key = Bytes::from_array(&env, &[0u8; 32]);
-    let sig = Bytes::from_array(&env, &[0u8; 64]);
+    let (pub_key, sig) = sign_order(&env, &order);
     let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
     assert_eq!(result, Err(Ok(PaymentError::PaymentExpired)));
+}
+
+#[test]
+fn test_signature_over_different_amount_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let mut order = make_order(&env, &merchant, &payer, &token);
+    let (pub_key, sig) = sign_order(&env, &order);
+
+    // Change amount after signing
+    order.amount = 2000;
+
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    // In Soroban, ed25519_verify panics on failure, which try_... returns as HostError(Crypto, InvalidInput)
+    // or just fails the contract call.
+    assert!(result.is_err());
 }
 
 // ── Refund tests ──────────────────────────────────────────────────────────────
@@ -232,8 +281,7 @@ fn setup_paid_order(
     mint(env, &token, &admin, &payer, 5000);
 
     let order = make_order(env, &merchant, &payer, &token);
-    let pub_key = Bytes::from_array(env, &[0u8; 32]);
-    let sig = Bytes::from_array(env, &[0u8; 64]);
+    let (pub_key, sig) = sign_order(env, &order);
     client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
 
     (admin, merchant, payer, token)
@@ -242,7 +290,7 @@ fn setup_paid_order(
 #[test]
 fn test_successful_refund_flow() {
     let (env, client) = setup();
-    let (admin, merchant, payer, _token) = setup_paid_order(&env, &client);
+    let (_admin, merchant, payer, _token) = setup_paid_order(&env, &client);
 
     client.initiate_refund(
         &payer,
@@ -338,9 +386,6 @@ fn test_get_merchant_payment_history() {
     );
     mint(&env, &token, &admin, &payer, 10000);
 
-    let pub_key = Bytes::from_array(&env, &[0u8; 32]);
-    let sig = Bytes::from_array(&env, &[0u8; 64]);
-
     for (id, amount) in [("ORDER_001", 100i128), ("ORDER_002", 200), ("ORDER_003", 300)] {
         let order = PaymentOrder {
             order_id: str(&env, id),
@@ -351,6 +396,7 @@ fn test_get_merchant_payment_history() {
             description: str(&env, "desc"),
             expires_at: 0,
         };
+        let (pub_key, sig) = sign_order(&env, &order);
         client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
     }
 
