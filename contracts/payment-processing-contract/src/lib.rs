@@ -12,7 +12,7 @@ mod test;
 
 use alloc::vec::Vec as RustVec;
 use soroban_sdk::{
-    contract, contractimpl, token, Address, Bytes, Env, String, Vec,
+    contract, contractimpl, token, xdr::ToXdr, Address, BytesN, Env, String, Vec,
 };
 
 use error::PaymentError;
@@ -100,8 +100,8 @@ impl PaymentContract {
         env: Env,
         payer: Address,
         order: PaymentOrder,
-        signature: Bytes,
-        merchant_public_key: Bytes,
+        signature: BytesN<64>,
+        merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
         payer.require_auth();
 
@@ -214,10 +214,61 @@ impl PaymentContract {
         date_end: Option<u64>,
     ) -> Result<GlobalStats, PaymentError> {
         helper::require_admin(&env, &admin)?;
-        // For date-filtered stats we return the stored totals (full stats).
-        // A production implementation would maintain time-bucketed counters.
-        let _ = (date_start, date_end);
-        Ok(storage::get_global_stats(&env))
+
+        if date_start.is_none() && date_end.is_none() {
+            return Ok(storage::get_global_stats(&env));
+        }
+
+        let mut stats = GlobalStats {
+            total_payments: 0,
+            total_volume: 0,
+            total_refunds: 0,
+            total_refund_volume: 0,
+        };
+
+        let p_ids = storage::get_all_payment_ids(&env);
+        for id in p_ids.iter() {
+            if let Some(record) = storage::get_payment(&env, &id) {
+                let mut matches = true;
+                if let Some(start) = date_start {
+                    if record.paid_at < start {
+                        matches = false;
+                    }
+                }
+                if let Some(end) = date_end {
+                    if record.paid_at > end {
+                        matches = false;
+                    }
+                }
+                if matches {
+                    stats.total_payments += 1;
+                    stats.total_volume += record.amount;
+                }
+            }
+        }
+
+        let r_ids = storage::get_all_refund_ids(&env);
+        for id in r_ids.iter() {
+            if let Some(record) = storage::get_refund(&env, &id) {
+                let mut matches = true;
+                if let Some(start) = date_start {
+                    if record.initiated_at < start {
+                        matches = false;
+                    }
+                }
+                if let Some(end) = date_end {
+                    if record.initiated_at > end {
+                        matches = false;
+                    }
+                }
+                if matches {
+                    stats.total_refunds += 1;
+                    stats.total_refund_volume += record.amount;
+                }
+            }
+        }
+
+        Ok(stats)
     }
 
     // ── Payment management ────────────────────────────────────────────────────
@@ -421,7 +472,9 @@ impl PaymentContract {
         let mut record = storage::get_payment(&env, &refund.order_id)
             .ok_or(PaymentError::PaymentNotFound)?;
 
-        record.merchant_address.require_auth();
+        if caller != record.merchant_address {
+            return Err(PaymentError::Unauthorized);
+        }
 
         let token_client = token::Client::new(&env, &record.token);
         token_client.transfer(&record.merchant_address, &record.payer, &refund.amount);
@@ -437,6 +490,7 @@ impl PaymentContract {
 
         refund.status = RefundStatus::Completed;
         storage::save_refund(&env, &refund);
+        storage::push_all_refund_id(&env, &refund_id);
         storage::increment_refund_stats(&env, refund.amount)?;
 
         env.events().publish(

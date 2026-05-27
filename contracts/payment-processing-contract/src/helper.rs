@@ -63,9 +63,9 @@ pub fn validate_order_id(order_id: &String) -> Result<(), PaymentError> {
 /// Verify an ed25519 signature over `payload` using `public_key`.
 pub fn verify_signature(
     env: &Env,
-    public_key: &Bytes,
+    public_key: &BytesN<32>,
     payload: &Bytes,
-    signature: &Bytes,
+    signature: &BytesN<64>,
 ) -> Result<(), PaymentError> {
     let pk: BytesN<32> = public_key
         .clone()

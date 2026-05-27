@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Bytes, String, Vec};
+use soroban_sdk::{contracttype, Address, String, Vec};
 
 // ── Merchant ──────────────────────────────────────────────────────────────────
 
@@ -167,4 +167,6 @@ pub enum DataKey {
     DefaultMultisigExpiry,
     GlobalPaymentIndex,
     GlobalStats,
+    AllPayments,
+    AllRefunds,
 }
