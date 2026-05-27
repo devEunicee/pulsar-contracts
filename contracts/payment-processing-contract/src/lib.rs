@@ -146,6 +146,7 @@ impl PaymentContract {
         storage::save_payment(&env, &record);
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &payer, &order.order_id);
+        storage::push_global_payment_id(&env, &order.order_id);
         storage::increment_payment_stats(&env, order.amount);
 
         env.events().publish(
@@ -273,11 +274,26 @@ impl PaymentContract {
         let now = env.ledger().timestamp();
         let cutoff = now.saturating_sub(period);
 
-        // We iterate over a snapshot of all known payment IDs.
-        // In practice you'd maintain a global index; here we skip that for brevity
-        // and return 0 (no-op) since we don't store a global list.
-        let _ = cutoff;
-        Ok(0)
+        let ids = storage::get_global_payment_ids(&env);
+        let mut new_ids = Vec::new(&env);
+        let mut count = 0;
+
+        for id in ids.iter() {
+            if let Some(record) = storage::get_payment(&env, &id) {
+                if record.paid_at < cutoff {
+                    storage::remove_payment(&env, &id);
+                    count += 1;
+                } else {
+                    new_ids.push_back(id);
+                }
+            }
+        }
+
+        if count > 0 {
+            storage::set_global_payment_ids(&env, &new_ids);
+        }
+
+        Ok(count)
     }
 
     pub fn set_payment_cleanup_period(
@@ -572,6 +588,7 @@ impl PaymentContract {
         storage::save_payment(&env, &record);
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &executor, &order.order_id);
+        storage::push_global_payment_id(&env, &order.order_id);
         storage::increment_payment_stats(&env, order.amount);
 
         ms.executed = true;

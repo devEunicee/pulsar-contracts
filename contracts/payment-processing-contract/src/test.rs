@@ -498,6 +498,47 @@ fn test_update_payment_status_emits_event() {
 }
 
 #[test]
+fn test_cleanup_expired_payments() {
+    let (env, client) = setup();
+    let (admin, merchant, payer, token) = setup_paid_order(&env, &client);
+
+    // Default cleanup is 90 days. Set to 1h for test.
+    client.set_payment_cleanup_period(&admin, &3600);
+
+    // Both payments exist (one from setup_paid_order)
+    assert!(client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001")).is_ok());
+
+    // Create another payment
+    let order2 = PaymentOrder {
+        order_id: bytes(&env, "ORDER_002"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 500,
+        description: str(&env, "desc"),
+        expires_at: 0,
+    };
+    let pub_key = Bytes::from_array(&env, &[0u8; 32]);
+    let sig = Bytes::from_array(&env, &[0u8; 64]);
+    client.process_payment_with_signature(&payer, &order2, &sig, &pub_key);
+
+    assert!(client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_002")).is_ok());
+
+    // Fast forward 2h
+    env.ledger().set_timestamp(7201);
+
+    // Cleanup should remove both
+    let count = client.cleanup_expired_payments(&admin);
+    assert_eq!(count, 2);
+
+    // Payments should be gone
+    let result = client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
+    let result = client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_002"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
+}
+
+#[test]
 fn test_multisig_payment_expiry() {
     let (env, client) = setup();
     let admin = Address::generate(&env);

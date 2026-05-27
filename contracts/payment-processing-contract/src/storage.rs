@@ -79,6 +79,27 @@ pub fn push_payer_payment_id(env: &Env, payer: &Address, order_id: &Bytes) {
         .set(&DataKey::PayerPayments(payer.clone()), &ids);
 }
 
+pub fn get_global_payment_ids(env: &Env) -> Vec<Bytes> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::GlobalPaymentIndex)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn push_global_payment_id(env: &Env, order_id: &Bytes) {
+    let mut ids = get_global_payment_ids(env);
+    ids.push_back(order_id.clone());
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalPaymentIndex, &ids);
+}
+
+pub fn set_global_payment_ids(env: &Env, ids: &Vec<Bytes>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalPaymentIndex, ids);
+}
+
 // ── Refund ────────────────────────────────────────────────────────────────────
 
 pub fn get_refund(env: &Env, refund_id: &Bytes) -> Option<RefundRecord> {

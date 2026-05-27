@@ -165,5 +165,6 @@ pub enum DataKey {
     Multisig(Bytes),
     CleanupPeriod,
     DefaultMultisigExpiry,
+    GlobalPaymentIndex,
     GlobalStats,
 }
