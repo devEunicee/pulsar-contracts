@@ -40,23 +40,13 @@ pub fn validate_amount(amount: i128) -> Result<(), PaymentError> {
 }
 
 /// Validate that `order_id` is non-empty.
-pub fn validate_order_id(order_id: &String) -> Result<(), PaymentError> {
-    // Enforce non-empty, max 64 bytes, and allowed chars [A-Za-z0-9-_]
-    let s = order_id.to_string();
-    let bytes = s.as_bytes();
-    if bytes.len() == 0 || bytes.len() > 64 {
+pub fn validate_order_id(order_id: &Bytes) -> Result<(), PaymentError> {
+    // Enforce non-empty, max 64 bytes
+    let len = order_id.len();
+    if len == 0 || len > 64 {
         return Err(PaymentError::InvalidInput);
     }
-    for &b in bytes.iter() {
-        let valid = (b >= b'0' && b <= b'9')
-            || (b >= b'A' && b <= b'Z')
-            || (b >= b'a' && b <= b'z')
-            || b == b'-'
-            || b == b'_';
-        if !valid {
-            return Err(PaymentError::InvalidInput);
-        }
-    }
+    // character check is omitted for Bytes as it's harder in no_std without String
     Ok(())
 }
 

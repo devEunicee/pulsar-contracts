@@ -6,7 +6,7 @@ use alloc::vec;
 use soroban_sdk::{
     testutils::{Address as _, Events as _, Ledger},
     token::StellarAssetClient,
-    Address, Bytes, Env, IntoVal, String, Vec,
+    Address, Bytes, BytesN, Env, IntoVal, String, Vec,
 };
 
 use ed25519_dalek::{Signer, SigningKey};
@@ -25,7 +25,7 @@ fn sign_order(env: &Env, order: &PaymentOrder) -> (BytesN<32>, BytesN<64>) {
     let signing_key = SigningKey::from_bytes(&[1u8; 32]);
     let public_key = signing_key.verifying_key();
 
-    let payload = order.clone().to_xdr(env);
+    let payload = order.order_id.clone();
     let mut payload_bytes = vec![0u8; payload.len() as usize];
     payload.copy_into_slice(&mut payload_bytes);
 
@@ -311,7 +311,7 @@ fn test_successful_refund_flow() {
     let status = client.get_refund_status(&bytes(&env, "REFUND_001"));
     assert_eq!(status, RefundStatus::Approved);
 
-    client.execute_refund(&bytes(&env, "REFUND_001"));
+    client.execute_refund(&merchant, &bytes(&env, "REFUND_001"));
     let status = client.get_refund_status(&bytes(&env, "REFUND_001"));
     assert_eq!(status, RefundStatus::Completed);
 
@@ -421,11 +421,11 @@ fn test_execute_refund_unauthorized_fails() {
     let (env, client) = setup();
     let (_admin, merchant, payer, _token) = setup_paid_order(&env, &client);
 
-    client.initiate_refund(&payer, &str(&env, "R1"), &str(&env, "ORDER_001"), &500, &str(&env, "reason"));
-    client.approve_refund(&merchant, &str(&env, "R1"));
+    client.initiate_refund(&payer, &bytes(&env, "R1"), &bytes(&env, "ORDER_001"), &500, &str(&env, "reason"));
+    client.approve_refund(&merchant, &bytes(&env, "R1"));
 
     let other = Address::generate(&env);
-    let result = client.try_execute_refund(&other, &str(&env, "R1"));
+    let result = client.try_execute_refund(&other, &bytes(&env, "R1"));
     assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
 }
 
@@ -514,6 +514,42 @@ fn test_multisig_insufficient_signatures_fails() {
     assert_eq!(result, Err(Ok(PaymentError::InsufficientSignatures)));
 }
 
+#[test]
+fn test_initiate_multisig_duplicate_signer_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &signer1, 5000);
+
+    let order = PaymentOrder {
+        order_id: bytes(&env, "MS_DUP"),
+        merchant_address: merchant.clone(),
+        payer: signer1.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "Multisig order"),
+        expires_at: 0,
+    };
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer1.clone()); // Duplicate
+
+    let result = client.try_initiate_multisig_payment(&signer1, &bytes(&env, "MS_DUP"), &order, &signers);
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
 // ── Admin config tests ────────────────────────────────────────────────────────
 
 #[test]
@@ -545,7 +581,7 @@ fn test_get_global_stats_with_filtering() {
     // Payment 1: t=1000
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let order1 = PaymentOrder {
-        order_id: str(&env, "ORDER_001"),
+        order_id: bytes(&env, "ORDER_001"),
         merchant_address: merchant.clone(),
         payer: payer.clone(),
         token: token.clone(),
@@ -559,7 +595,7 @@ fn test_get_global_stats_with_filtering() {
     // Payment 2: t=2000
     env.ledger().with_mut(|l| l.timestamp = 2000);
     let order2 = PaymentOrder {
-        order_id: str(&env, "ORDER_002"),
+        order_id: bytes(&env, "ORDER_002"),
         merchant_address: merchant.clone(),
         payer: payer.clone(),
         token: token.clone(),
@@ -572,10 +608,10 @@ fn test_get_global_stats_with_filtering() {
 
     // Refund for Payment 1: initiated at t=3000, executed at t=4000
     env.ledger().with_mut(|l| l.timestamp = 3000);
-    client.initiate_refund(&payer, &str(&env, "R1"), &str(&env, "ORDER_001"), &500, &str(&env, "reason"));
-    client.approve_refund(&merchant, &str(&env, "R1"));
+    client.initiate_refund(&payer, &bytes(&env, "R1"), &bytes(&env, "ORDER_001"), &500, &str(&env, "reason"));
+    client.approve_refund(&merchant, &bytes(&env, "R1"));
     env.ledger().with_mut(|l| l.timestamp = 4000);
-    client.execute_refund(&merchant, &str(&env, "R1"));
+    client.execute_refund(&merchant, &bytes(&env, "R1"));
 
     // Unfiltered
     let stats = client.get_global_payment_stats(&admin, &None, &None);
@@ -641,8 +677,8 @@ fn test_cleanup_expired_payments() {
         description: str(&env, "desc"),
         expires_at: 0,
     };
-    let pub_key = Bytes::from_array(&env, &[0u8; 32]);
-    let sig = Bytes::from_array(&env, &[0u8; 64]);
+    let pub_key = BytesN::from_array(&env, &[0u8; 32]);
+    let sig = BytesN::from_array(&env, &[0u8; 64]);
     client.process_payment_with_signature(&payer, &order2, &sig, &pub_key);
 
     assert!(client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_002")).is_ok());
@@ -677,6 +713,8 @@ fn test_multisig_payment_expiry() {
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
     );
+
+    mint(&env, &token, &admin, &signer1, 5000);
 
     let order = make_order(&env, &merchant, &signer1, &token);
     let mut signers = Vec::new(&env);
