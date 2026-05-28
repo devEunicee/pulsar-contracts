@@ -3,6 +3,7 @@ use soroban_sdk::{Address, Bytes, BytesN, Env, String};
 use crate::error::PaymentError;
 use crate::storage;
 use crate::types::{PaymentFilter, PaymentRecord, PaymentStatus, StatusFilter};
+use crate::error::PaymentError;
 
 /// Require that `caller` is the contract admin.
 pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
@@ -39,24 +40,46 @@ pub fn validate_amount(amount: i128) -> Result<(), PaymentError> {
     Ok(())
 }
 
-/// Validate that `order_id` is non-empty.
-pub fn validate_order_id(order_id: &String) -> Result<(), PaymentError> {
-    // Enforce non-empty, max 64 bytes, and allowed chars [A-Za-z0-9-_]
-    let s = order_id.to_string();
-    let bytes = s.as_bytes();
-    if bytes.len() == 0 || bytes.len() > 64 {
+/// Validate merchant string fields: name, description, contact_info
+pub fn validate_merchant_fields(
+    name: &String,
+    description: &String,
+    contact_info: &String,
+) -> Result<(), PaymentError> {
+    // name <= 64 bytes
+    let name_bytes = name.to_string().as_bytes();
+    if name_bytes.len() > 64 {
         return Err(PaymentError::InvalidInput);
     }
-    for &b in bytes.iter() {
-        let valid = (b >= b'0' && b <= b'9')
-            || (b >= b'A' && b <= b'Z')
-            || (b >= b'a' && b <= b'z')
-            || b == b'-'
-            || b == b'_';
-        if !valid {
+
+    // description <= 256 bytes
+    let desc_bytes = description.to_string().as_bytes();
+    if desc_bytes.len() > 256 {
+        return Err(PaymentError::InvalidInput);
+    }
+
+    // contact_info <= 128 bytes and printable ASCII only
+    let contact_bytes = contact_info.to_string().as_bytes();
+    if contact_bytes.len() > 128 {
+        return Err(PaymentError::InvalidInput);
+    }
+    for &b in contact_bytes.iter() {
+        if b < 0x20 || b > 0x7E {
             return Err(PaymentError::InvalidInput);
         }
     }
+
+    Ok(())
+}
+
+/// Validate that `order_id` is non-empty.
+pub fn validate_order_id(order_id: &Bytes) -> Result<(), PaymentError> {
+    // Enforce non-empty, max 64 bytes
+    let len = order_id.len();
+    if len == 0 || len > 64 {
+        return Err(PaymentError::InvalidInput);
+    }
+    // character check is omitted for Bytes as it's harder in no_std without String
     Ok(())
 }
 
