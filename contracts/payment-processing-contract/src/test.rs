@@ -6,7 +6,7 @@ use alloc::vec;
 use soroban_sdk::{
     testutils::{Address as _, Events as _, Ledger},
     token::StellarAssetClient,
-    Address, Bytes, Env, IntoVal, String, Vec,
+    Address, Bytes, BytesN, Env, IntoVal, String, Vec,
 };
 
 use ed25519_dalek::{Signer, SigningKey};
@@ -104,6 +104,7 @@ fn test_register_merchant_success() {
         &str(&env, "A great store"),
         &str(&env, "contact@store.com"),
         &MerchantCategory::Retail,
+        &None,
     );
     let m = client.get_merchant(&merchant);
     assert_eq!(m.name, str(&env, "My Store"));
@@ -120,6 +121,7 @@ fn test_register_merchant_duplicate_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     let result = client.try_register_merchant(
         &merchant,
@@ -127,6 +129,7 @@ fn test_register_merchant_duplicate_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     assert_eq!(result, Err(Ok(PaymentError::MerchantAlreadyRegistered)));
 }
@@ -143,6 +146,7 @@ fn test_deactivate_merchant() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     client.deactivate_merchant(&admin, &merchant);
     let m = client.get_merchant(&merchant);
@@ -166,13 +170,14 @@ fn test_successful_payment_with_signature() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &payer, 5000);
 
     let order = make_order(&env, &merchant, &payer, &token);
     let (pub_key, sig) = sign_order(&env, &order);
 
-    client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    client.process_payment_with_signature(&payer, &order, &sig);
 
     let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
     assert_eq!(record.amount, 1000);
@@ -194,14 +199,15 @@ fn test_duplicate_payment_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &payer, 5000);
 
     let order = make_order(&env, &merchant, &payer, &token);
     let (pub_key, sig) = sign_order(&env, &order);
 
-    client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
-    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    client.process_payment_with_signature(&payer, &order, &sig);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig);
     assert_eq!(result, Err(Ok(PaymentError::PaymentAlreadyExists)));
 }
 
@@ -220,6 +226,7 @@ fn test_payment_expired_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &payer, 5000);
 
@@ -229,7 +236,7 @@ fn test_payment_expired_fails() {
     order.expires_at = 1000; // already expired
 
     let (pub_key, sig) = sign_order(&env, &order);
-    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig);
     assert_eq!(result, Err(Ok(PaymentError::PaymentExpired)));
 }
 
@@ -248,6 +255,7 @@ fn test_signature_over_different_amount_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com"),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &payer, 5000);
 
@@ -257,7 +265,7 @@ fn test_signature_over_different_amount_fails() {
     // Change amount after signing
     order.amount = 2000;
 
-    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig);
     // In Soroban, ed25519_verify panics on failure, which try_... returns as HostError(Crypto, InvalidInput)
     // or just fails the contract call.
     assert!(result.is_err());
@@ -281,12 +289,13 @@ fn setup_paid_order(
         &str(env, "desc"),
         &str(env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(env, &token, &admin, &payer, 5000);
 
     let order = make_order(env, &merchant, &payer, &token);
     let (pub_key, sig) = sign_order(env, &order);
-    client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    client.process_payment_with_signature(&payer, &order, &sig);
 
     (admin, merchant, payer, token)
 }
@@ -387,6 +396,7 @@ fn test_get_merchant_payment_history() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &payer, 10000);
 
@@ -401,7 +411,7 @@ fn test_get_merchant_payment_history() {
             expires_at: 0,
         };
         let (pub_key, sig) = sign_order(&env, &order);
-        client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
+        client.process_payment_with_signature(&payer, &order, &sig);
     }
 
     let page = client.get_merchant_payment_history(
@@ -447,6 +457,7 @@ fn test_initiate_multisig_payment_success() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &signer1, 5000);
 
@@ -490,6 +501,7 @@ fn test_multisig_insufficient_signatures_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &signer1, 5000);
 
@@ -539,6 +551,7 @@ fn test_get_global_stats_with_filtering() {
         &str(&env, "desc"),
         &str(&env, "c@c.com"),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &payer, 10000);
 
@@ -554,7 +567,7 @@ fn test_get_global_stats_with_filtering() {
         expires_at: 0,
     };
     let (pk1, sig1) = sign_order(&env, &order1);
-    client.process_payment_with_signature(&payer, &order1, &sig1, &pk1);
+    client.process_payment_with_signature(&payer, &order1, &sig1);
 
     // Payment 2: t=2000
     env.ledger().with_mut(|l| l.timestamp = 2000);
@@ -568,7 +581,7 @@ fn test_get_global_stats_with_filtering() {
         expires_at: 0,
     };
     let (pk2, sig2) = sign_order(&env, &order2);
-    client.process_payment_with_signature(&payer, &order2, &sig2, &pk2);
+    client.process_payment_with_signature(&payer, &order2, &sig2);
 
     // Refund for Payment 1: initiated at t=3000, executed at t=4000
     env.ledger().with_mut(|l| l.timestamp = 3000);
@@ -641,9 +654,8 @@ fn test_cleanup_expired_payments() {
         description: str(&env, "desc"),
         expires_at: 0,
     };
-    let pub_key = Bytes::from_array(&env, &[0u8; 32]);
-    let sig = Bytes::from_array(&env, &[0u8; 64]);
-    client.process_payment_with_signature(&payer, &order2, &sig, &pub_key);
+    let (_pub_key2, sig2) = sign_order(&env, &order2);
+    client.process_payment_with_signature(&payer, &order2, &sig2);
 
     assert!(client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_002")).is_ok());
 
@@ -676,6 +688,7 @@ fn test_multisig_payment_expiry() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
 
     let order = make_order(&env, &merchant, &signer1, &token);
@@ -692,4 +705,99 @@ fn test_multisig_payment_expiry() {
 
     let result = client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_EXPIRY"));
     assert_eq!(result, Err(Ok(PaymentError::PaymentExpired)));
+}
+
+// ── SEC-002: signing_public_key binding tests ─────────────────────────────────
+
+fn signing_key_bytes() -> [u8; 32] {
+    [1u8; 32]
+}
+
+fn wrong_signing_key_bytes() -> [u8; 32] {
+    [2u8; 32]
+}
+
+fn pub_key_for(env: &Env, seed: [u8; 32]) -> BytesN<32> {
+    let sk = SigningKey::from_bytes(&seed);
+    BytesN::from_array(env, &sk.verifying_key().to_bytes())
+}
+
+#[test]
+fn test_payment_uses_stored_key_when_set() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    let stored_pub_key = pub_key_for(&env, signing_key_bytes());
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &Some(stored_pub_key),
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (_pub_key, sig) = sign_order(&env, &order);
+
+    // Should succeed: signature matches stored key
+    client.process_payment_with_signature(&payer, &order, &sig);
+
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.status, PaymentStatus::Completed);
+}
+
+#[test]
+fn test_payment_rejects_wrong_key_mismatch() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    // Register merchant with key from seed [2u8; 32]
+    let stored_pub_key = pub_key_for(&env, wrong_signing_key_bytes());
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &Some(stored_pub_key),
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let order = make_order(&env, &merchant, &payer, &token);
+    // Sign with seed [1u8; 32] — does NOT match stored key [2u8; 32]
+    let (_pub_key, sig) = sign_order(&env, &order);
+
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_stored_key_visible_on_get_merchant() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    let stored_pub_key = pub_key_for(&env, signing_key_bytes());
+
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &Some(stored_pub_key.clone()),
+    );
+
+    let m = client.get_merchant(&merchant);
+    assert_eq!(m.signing_public_key, Some(stored_pub_key));
 }

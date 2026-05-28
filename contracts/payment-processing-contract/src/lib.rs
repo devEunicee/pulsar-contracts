@@ -50,6 +50,7 @@ impl PaymentContract {
         description: String,
         contact_info: String,
         category: MerchantCategory,
+        signing_public_key: Option<BytesN<32>>,
     ) -> Result<(), PaymentError> {
         merchant_address.require_auth();
         if storage::get_merchant(&env, &merchant_address).is_some() {
@@ -63,6 +64,7 @@ impl PaymentContract {
             category,
             active: true,
             registered_at: env.ledger().timestamp(),
+            signing_public_key,
         };
         storage::save_merchant(&env, &merchant);
         env.events().publish(
@@ -101,7 +103,6 @@ impl PaymentContract {
         payer: Address,
         order: PaymentOrder,
         signature: BytesN<64>,
-        merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
         payer.require_auth();
 
@@ -117,17 +118,16 @@ impl PaymentContract {
             return Err(PaymentError::PaymentExpired);
         }
 
-        // Verify merchant is active
-        let _merchant = storage::get_merchant(&env, &order.merchant_address)
+        // Verify merchant is active and retrieve stored signing key
+        let merchant = storage::get_merchant(&env, &order.merchant_address)
             .ok_or(PaymentError::MerchantNotFound)?;
-        if !_merchant.active {
+        if !merchant.active {
             return Err(PaymentError::MerchantInactive);
         }
 
-        // Verify signature over order_id bytes as payload
-        let payload = order.order_id.clone();
-        let is_test_key = merchant_public_key == Bytes::from_array(&env, &[0u8; 32]);
-        if !is_test_key {
+        // Verify signature using the on-chain registered key
+        if let Some(merchant_public_key) = merchant.signing_public_key {
+            let payload = order.clone().to_xdr(&env);
             helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;
         }
 
