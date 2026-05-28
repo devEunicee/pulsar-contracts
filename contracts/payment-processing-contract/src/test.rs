@@ -693,3 +693,466 @@ fn test_multisig_payment_expiry() {
     let result = client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_EXPIRY"));
     assert_eq!(result, Err(Ok(PaymentError::PaymentExpired)));
 }
+
+// ── T-003: get_payer_payment_history tests ────────────────────────────────────
+
+fn setup_payer_history(
+    env: &Env,
+    client: &PaymentContractClient,
+    amounts: &[i128],
+) -> (Address, Address, Address, Address) {
+    let admin = Address::generate(env);
+    let merchant = Address::generate(env);
+    let payer = Address::generate(env);
+    let token = create_token(env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(env, "Store"),
+        &str(env, "desc"),
+        &str(env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    let total: i128 = amounts.iter().sum::<i128>() + 1000;
+    mint(env, &token, &admin, &payer, total);
+
+    for (i, &amount) in amounts.iter().enumerate() {
+        let id = alloc::format!("PAY_{:03}", i);
+        let order = PaymentOrder {
+            order_id: Bytes::from_slice(env, id.as_bytes()),
+            merchant_address: merchant.clone(),
+            payer: payer.clone(),
+            token: token.clone(),
+            amount,
+            description: str(env, "desc"),
+            expires_at: 0,
+        };
+        let (_pk, sig) = sign_order(env, &order);
+        client.process_payment_with_signature(&payer, &order, &sig);
+    }
+
+    (admin, merchant, payer, token)
+}
+
+#[test]
+fn test_payer_history_no_payments() {
+    let (env, client) = setup();
+    let payer = Address::generate(&env);
+    // Register payer as a merchant so auth works; payer has no payments
+    let admin = Address::generate(&env);
+    client.set_admin(&admin);
+
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Descending,
+    );
+    assert_eq!(page.total, 0);
+    assert_eq!(page.records.len(), 0);
+    assert!(page.next_cursor.is_none());
+}
+
+#[test]
+fn test_payer_history_single_payment() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_payer_history(&env, &client, &[500]);
+
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().amount, 500);
+    assert!(page.next_cursor.is_none());
+}
+
+#[test]
+fn test_payer_history_multiple_payments() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) =
+        setup_payer_history(&env, &client, &[100, 200, 300]);
+
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Amount,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 3);
+    assert_eq!(page.records.get(0).unwrap().amount, 100);
+    assert_eq!(page.records.get(1).unwrap().amount, 200);
+    assert_eq!(page.records.get(2).unwrap().amount, 300);
+}
+
+#[test]
+fn test_payer_history_filter_date_range() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 10000);
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let o1 = PaymentOrder {
+        order_id: bytes(&env, "D_001"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 100,
+        description: str(&env, "d"),
+        expires_at: 0,
+    };
+    let (_pk, sig) = sign_order(&env, &o1);
+    client.process_payment_with_signature(&payer, &o1, &sig);
+
+    env.ledger().with_mut(|l| l.timestamp = 5000);
+    let o2 = PaymentOrder {
+        order_id: bytes(&env, "D_002"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 200,
+        description: str(&env, "d"),
+        expires_at: 0,
+    };
+    let (_pk2, sig2) = sign_order(&env, &o2);
+    client.process_payment_with_signature(&payer, &o2, &sig2);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter {
+        date_start: Some(500),
+        date_end: Some(2000),
+        amount_min: None,
+        amount_max: None,
+        token: None,
+        status: StatusFilter::Any,
+    };
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &Some(filter),
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().amount, 100);
+}
+
+#[test]
+fn test_payer_history_filter_amount_range() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) =
+        setup_payer_history(&env, &client, &[50, 150, 500]);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter {
+        date_start: None,
+        date_end: None,
+        amount_min: Some(100),
+        amount_max: Some(200),
+        token: None,
+        status: StatusFilter::Any,
+    };
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &Some(filter),
+        &SortField::Amount,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().amount, 150);
+}
+
+#[test]
+fn test_payer_history_filter_by_token() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token1 = create_token(&env, &admin);
+    let token2 = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token1, &admin, &payer, 5000);
+    mint(&env, &token2, &admin, &payer, 5000);
+
+    let o1 = PaymentOrder {
+        order_id: bytes(&env, "T_001"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token1.clone(),
+        amount: 100,
+        description: str(&env, "d"),
+        expires_at: 0,
+    };
+    let (_pk, sig) = sign_order(&env, &o1);
+    client.process_payment_with_signature(&payer, &o1, &sig);
+
+    let o2 = PaymentOrder {
+        order_id: bytes(&env, "T_002"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token2.clone(),
+        amount: 200,
+        description: str(&env, "d"),
+        expires_at: 0,
+    };
+    let (_pk2, sig2) = sign_order(&env, &o2);
+    client.process_payment_with_signature(&payer, &o2, &sig2);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter {
+        date_start: None,
+        date_end: None,
+        amount_min: None,
+        amount_max: None,
+        token: Some(token2.clone()),
+        status: StatusFilter::Any,
+    };
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &Some(filter),
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().token, token2);
+}
+
+#[test]
+fn test_payer_history_filter_by_status() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, _token) =
+        setup_payer_history(&env, &client, &[300, 400]);
+
+    // Initiate + approve + execute a partial refund on PAY_000
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "RF_001"),
+        &bytes(&env, "PAY_000"),
+        &100,
+        &str(&env, "partial"),
+    );
+    client.approve_refund(&merchant, &bytes(&env, "RF_001"));
+    client.execute_refund(&bytes(&env, "RF_001"));
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter {
+        date_start: None,
+        date_end: None,
+        amount_min: None,
+        amount_max: None,
+        token: None,
+        status: StatusFilter::PartiallyRefunded,
+    };
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &Some(filter),
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().status, PaymentStatus::PartiallyRefunded);
+}
+
+#[test]
+fn test_payer_history_sort_by_amount_ascending() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) =
+        setup_payer_history(&env, &client, &[300, 100, 200]);
+
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Amount,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.records.get(0).unwrap().amount, 100);
+    assert_eq!(page.records.get(2).unwrap().amount, 300);
+}
+
+#[test]
+fn test_payer_history_sort_by_amount_descending() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) =
+        setup_payer_history(&env, &client, &[300, 100, 200]);
+
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Amount,
+        &SortOrder::Descending,
+    );
+    assert_eq!(page.records.get(0).unwrap().amount, 300);
+    assert_eq!(page.records.get(2).unwrap().amount, 100);
+}
+
+#[test]
+fn test_payer_history_sort_by_date_ascending() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 10000);
+
+    for (i, ts) in [(0usize, 3000u64), (1, 1000), (2, 2000)] {
+        env.ledger().with_mut(|l| l.timestamp = ts);
+        let id = alloc::format!("SD_{:03}", i);
+        let order = PaymentOrder {
+            order_id: Bytes::from_slice(&env, id.as_bytes()),
+            merchant_address: merchant.clone(),
+            payer: payer.clone(),
+            token: token.clone(),
+            amount: 100,
+            description: str(&env, "d"),
+            expires_at: 0,
+        };
+        let (_pk, sig) = sign_order(&env, &order);
+        client.process_payment_with_signature(&payer, &order, &sig);
+    }
+
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.records.get(0).unwrap().paid_at, 1000);
+    assert_eq!(page.records.get(2).unwrap().paid_at, 3000);
+}
+
+#[test]
+fn test_payer_history_sort_by_date_descending() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 10000);
+
+    for (i, ts) in [(0usize, 1000u64), (1, 3000), (2, 2000)] {
+        env.ledger().with_mut(|l| l.timestamp = ts);
+        let id = alloc::format!("DD_{:03}", i);
+        let order = PaymentOrder {
+            order_id: Bytes::from_slice(&env, id.as_bytes()),
+            merchant_address: merchant.clone(),
+            payer: payer.clone(),
+            token: token.clone(),
+            amount: 100,
+            description: str(&env, "d"),
+            expires_at: 0,
+        };
+        let (_pk, sig) = sign_order(&env, &order);
+        client.process_payment_with_signature(&payer, &order, &sig);
+    }
+
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Descending,
+    );
+    assert_eq!(page.records.get(0).unwrap().paid_at, 3000);
+    assert_eq!(page.records.get(2).unwrap().paid_at, 1000);
+}
+
+#[test]
+fn test_payer_history_pagination() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) =
+        setup_payer_history(&env, &client, &[100, 200, 300, 400, 500]);
+
+    // Page 1: limit 2
+    let page1 = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &2,
+        &None,
+        &SortField::Amount,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page1.records.len(), 2);
+    assert!(page1.next_cursor.is_some());
+
+    // Page 2: use cursor from page 1
+    let page2 = client.get_payer_payment_history(
+        &payer,
+        &page1.next_cursor,
+        &2,
+        &None,
+        &SortField::Amount,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page2.records.len(), 2);
+
+    // Amounts on page 2 must be greater than those on page 1
+    let max_p1 = page1.records.get(1).unwrap().amount;
+    let min_p2 = page2.records.get(0).unwrap().amount;
+    assert!(min_p2 > max_p1);
+}
