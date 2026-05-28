@@ -572,13 +572,13 @@
 
 ---
 
-### T-008 · No test for multisig with duplicate signer in `required_signers`
+### T-008 · No test for multisig with duplicate signer in `required_signers` [COMPLETED]
 
 **Description:** If the same address appears twice in `required_signers`, they can sign twice and satisfy the threshold alone.
 
 **Acceptance Criteria:**
-- Test: duplicate signer in `required_signers` → `InvalidInput` (after fix)
-- Deduplication logic added to `initiate_multisig_payment`
+- [x] Test: duplicate signer in `required_signers` → `InvalidInput` (after fix)
+- [x] Deduplication logic added to `initiate_multisig_payment`
 
 **Priority:** High
 **Effort:** Small

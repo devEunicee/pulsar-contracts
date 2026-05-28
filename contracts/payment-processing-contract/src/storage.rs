@@ -114,14 +114,14 @@ pub fn save_refund(env: &Env, refund: &RefundRecord) {
         .set(&DataKey::Refund(refund.refund_id.clone()), refund);
 }
 
-pub fn get_all_refund_ids(env: &Env) -> Vec<String> {
+pub fn get_all_refund_ids(env: &Env) -> Vec<Bytes> {
     env.storage()
         .persistent()
         .get(&DataKey::AllRefunds)
         .unwrap_or_else(|| Vec::new(env))
 }
 
-pub fn push_all_refund_id(env: &Env, refund_id: &String) {
+pub fn push_all_refund_id(env: &Env, refund_id: &Bytes) {
     let mut ids = get_all_refund_ids(env);
     ids.push_back(refund_id.clone());
     env.storage()
