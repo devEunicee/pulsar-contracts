@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, String, Vec};
+use soroban_sdk::{contracttype, Address, Bytes, String, Vec};
 
 // ── Merchant ──────────────────────────────────────────────────────────────────
 
@@ -159,13 +159,16 @@ pub enum DataKey {
     Admin,
     Merchant(Address),
     Payment(Bytes),
-    MerchantPayments(Address),
-    PayerPayments(Address),
+    MerchantPaymentChunk(Address, u32),
+    MerchantPaymentCount(Address),
+    PayerPaymentChunk(Address, u32),
+    PayerPaymentCount(Address),
     Refund(Bytes),
     Multisig(Bytes),
     CleanupPeriod,
     DefaultMultisigExpiry,
-    GlobalPaymentIndex,
+    GlobalPaymentChunk(u32),
+    GlobalPaymentCount,
     GlobalStats,
     AllPayments,
     AllRefunds,

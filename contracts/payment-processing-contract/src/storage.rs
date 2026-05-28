@@ -49,55 +49,166 @@ pub fn remove_payment(env: &Env, order_id: &Bytes) {
 
 // ── Payment index lists ───────────────────────────────────────────────────────
 
+const CHUNK_SIZE: u32 = 100;
+
 pub fn get_merchant_payment_ids(env: &Env, merchant: &Address) -> Vec<Bytes> {
-    env.storage()
+    let count = env
+        .storage()
         .persistent()
-        .get(&DataKey::MerchantPayments(merchant.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+        .get(&DataKey::MerchantPaymentCount(merchant.clone()))
+        .unwrap_or(0u32);
+    let mut all_ids = Vec::new(env);
+    if count == 0 {
+        return all_ids;
+    }
+    let num_chunks = (count + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    for i in 0..num_chunks {
+        let chunk: Vec<Bytes> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::MerchantPaymentChunk(merchant.clone(), i))
+            .unwrap_or_else(|| Vec::new(env));
+        for id in chunk.iter() {
+            all_ids.push_back(id);
+        }
+    }
+    all_ids
 }
 
 pub fn push_merchant_payment_id(env: &Env, merchant: &Address, order_id: &Bytes) {
-    let mut ids = get_merchant_payment_ids(env, merchant);
-    ids.push_back(order_id.clone());
+    let count = env
+        .storage()
+        .persistent()
+        .get(&DataKey::MerchantPaymentCount(merchant.clone()))
+        .unwrap_or(0u32);
+    let chunk_index = count / CHUNK_SIZE;
+    let mut chunk: Vec<Bytes> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::MerchantPaymentChunk(merchant.clone(), chunk_index))
+        .unwrap_or_else(|| Vec::new(env));
+    chunk.push_back(order_id.clone());
     env.storage()
         .persistent()
-        .set(&DataKey::MerchantPayments(merchant.clone()), &ids);
+        .set(
+            &DataKey::MerchantPaymentChunk(merchant.clone(), chunk_index),
+            &chunk,
+        );
+    env.storage()
+        .persistent()
+        .set(&DataKey::MerchantPaymentCount(merchant.clone()), &(count + 1));
 }
 
 pub fn get_payer_payment_ids(env: &Env, payer: &Address) -> Vec<Bytes> {
-    env.storage()
+    let count = env
+        .storage()
         .persistent()
-        .get(&DataKey::PayerPayments(payer.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+        .get(&DataKey::PayerPaymentCount(payer.clone()))
+        .unwrap_or(0u32);
+    let mut all_ids = Vec::new(env);
+    if count == 0 {
+        return all_ids;
+    }
+    let num_chunks = (count + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    for i in 0..num_chunks {
+        let chunk: Vec<Bytes> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PayerPaymentChunk(payer.clone(), i))
+            .unwrap_or_else(|| Vec::new(env));
+        for id in chunk.iter() {
+            all_ids.push_back(id);
+        }
+    }
+    all_ids
 }
 
 pub fn push_payer_payment_id(env: &Env, payer: &Address, order_id: &Bytes) {
-    let mut ids = get_payer_payment_ids(env, payer);
-    ids.push_back(order_id.clone());
+    let count = env
+        .storage()
+        .persistent()
+        .get(&DataKey::PayerPaymentCount(payer.clone()))
+        .unwrap_or(0u32);
+    let chunk_index = count / CHUNK_SIZE;
+    let mut chunk: Vec<Bytes> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::PayerPaymentChunk(payer.clone(), chunk_index))
+        .unwrap_or_else(|| Vec::new(env));
+    chunk.push_back(order_id.clone());
     env.storage()
         .persistent()
-        .set(&DataKey::PayerPayments(payer.clone()), &ids);
+        .set(
+            &DataKey::PayerPaymentChunk(payer.clone(), chunk_index),
+            &chunk,
+        );
+    env.storage()
+        .persistent()
+        .set(&DataKey::PayerPaymentCount(payer.clone()), &(count + 1));
 }
 
 pub fn get_global_payment_ids(env: &Env) -> Vec<Bytes> {
-    env.storage()
+    let count = env
+        .storage()
         .persistent()
-        .get(&DataKey::GlobalPaymentIndex)
-        .unwrap_or_else(|| Vec::new(env))
+        .get(&DataKey::GlobalPaymentCount)
+        .unwrap_or(0u32);
+    let mut all_ids = Vec::new(env);
+    if count == 0 {
+        return all_ids;
+    }
+    let num_chunks = (count + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    for i in 0..num_chunks {
+        let chunk: Vec<Bytes> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::GlobalPaymentChunk(i))
+            .unwrap_or_else(|| Vec::new(env));
+        for id in chunk.iter() {
+            all_ids.push_back(id);
+        }
+    }
+    all_ids
 }
 
 pub fn push_global_payment_id(env: &Env, order_id: &Bytes) {
-    let mut ids = get_global_payment_ids(env);
-    ids.push_back(order_id.clone());
+    let count = env
+        .storage()
+        .persistent()
+        .get(&DataKey::GlobalPaymentCount)
+        .unwrap_or(0u32);
+    let chunk_index = count / CHUNK_SIZE;
+    let mut chunk: Vec<Bytes> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::GlobalPaymentChunk(chunk_index))
+        .unwrap_or_else(|| Vec::new(env));
+    chunk.push_back(order_id.clone());
     env.storage()
         .persistent()
-        .set(&DataKey::GlobalPaymentIndex, &ids);
+        .set(&DataKey::GlobalPaymentChunk(chunk_index), &chunk);
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalPaymentCount, &(count + 1));
 }
 
 pub fn set_global_payment_ids(env: &Env, ids: &Vec<Bytes>) {
+    let count = ids.len();
     env.storage()
         .persistent()
-        .set(&DataKey::GlobalPaymentIndex, ids);
+        .set(&DataKey::GlobalPaymentCount, &count);
+    let num_chunks = (count + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    for i in 0..num_chunks {
+        let mut chunk = Vec::new(env);
+        let start = i * CHUNK_SIZE;
+        let end = (start + CHUNK_SIZE).min(count);
+        for j in start..end {
+            chunk.push_back(ids.get(j).unwrap());
+        }
+        env.storage()
+            .persistent()
+            .set(&DataKey::GlobalPaymentChunk(i), &chunk);
+    }
 }
 
 // ── Refund ────────────────────────────────────────────────────────────────────
@@ -114,14 +225,14 @@ pub fn save_refund(env: &Env, refund: &RefundRecord) {
         .set(&DataKey::Refund(refund.refund_id.clone()), refund);
 }
 
-pub fn get_all_refund_ids(env: &Env) -> Vec<String> {
+pub fn get_all_refund_ids(env: &Env) -> Vec<Bytes> {
     env.storage()
         .persistent()
         .get(&DataKey::AllRefunds)
         .unwrap_or_else(|| Vec::new(env))
 }
 
-pub fn push_all_refund_id(env: &Env, refund_id: &String) {
+pub fn push_all_refund_id(env: &Env, refund_id: &Bytes) {
     let mut ids = get_all_refund_ids(env);
     ids.push_back(refund_id.clone());
     env.storage()
