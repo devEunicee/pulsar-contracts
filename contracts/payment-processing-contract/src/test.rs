@@ -679,8 +679,36 @@ fn test_set_cleanup_period() {
     client.set_payment_cleanup_period(&admin, &86400);
 }
 
+// ── Issue #37: set_payment_cleanup_period zero and valid value ────────────────
+
 #[test]
-fn test_get_global_stats_with_filtering() {
+fn test_set_cleanup_period_zero_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.set_admin(&admin);
+    let result = client.try_set_payment_cleanup_period(&admin, &0);
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
+fn test_set_cleanup_period_valid_is_persisted() {
+    let (env, client) = setup();
+    let (admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Set a 1-second cleanup period
+    client.set_payment_cleanup_period(&admin, &1);
+
+    // Advance time past the cutoff
+    env.ledger().set_timestamp(100);
+
+    // The custom period must be in effect: cleanup removes the payment
+    let count = client.cleanup_expired_payments(&admin);
+    assert_eq!(count, 1);
+    let result = client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
+}
+
+
     let (env, client) = setup();
     let admin = Address::generate(&env);
     let merchant = Address::generate(&env);
