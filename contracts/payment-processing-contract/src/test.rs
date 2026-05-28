@@ -74,6 +74,125 @@ fn make_order(env: &Env, merchant: &Address, payer: &Address, token: &Address) -
     }
 }
 
+#[test]
+fn test_payment_payer_mismatch_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let other_payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    // Order signed for other_payer but submitted by `payer`.
+    let order = make_order(&env, &merchant, &other_payer, &token);
+    let (pub_key, sig) = sign_order(&env, &order);
+
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
+fn test_register_merchant_field_limits() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.set_admin(&admin);
+
+    // name: 64 ok, 65 fails
+    let m1 = Address::generate(&env);
+    let name_ok = "n".repeat(64);
+    client.register_merchant(
+        &m1,
+        &str(&env, &name_ok),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+
+    let m2 = Address::generate(&env);
+    let name_bad = "n".repeat(65);
+    let result = client.try_register_merchant(
+        &m2,
+        &str(&env, &name_bad),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+
+    // description: 256 ok, 257 fails
+    let m3 = Address::generate(&env);
+    let desc_ok = "d".repeat(256);
+    client.register_merchant(
+        &m3,
+        &str(&env, "Store"),
+        &str(&env, &desc_ok),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+
+    let m4 = Address::generate(&env);
+    let desc_bad = "d".repeat(257);
+    let result = client.try_register_merchant(
+        &m4,
+        &str(&env, "Store"),
+        &str(&env, &desc_bad),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+
+    // contact_info: 128 ok, 129 fails
+    let m5 = Address::generate(&env);
+    let contact_ok = "c".repeat(128);
+    client.register_merchant(
+        &m5,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, &contact_ok),
+        &MerchantCategory::Retail,
+    );
+
+    let m6 = Address::generate(&env);
+    let contact_bad = "c".repeat(129);
+    let result = client.try_register_merchant(
+        &m6,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, &contact_bad),
+        &MerchantCategory::Retail,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
+fn test_register_contact_info_sanitisation_rejects_control_chars() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.set_admin(&admin);
+    let merchant = Address::generate(&env);
+
+    // contact_info with control character (0x01)
+    let bad_contact = String::from_str(&env, "bad\x01contact");
+    let result = client.try_register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &bad_contact,
+        &MerchantCategory::Retail,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
 // ── Admin tests ───────────────────────────────────────────────────────────────
 
 #[test]

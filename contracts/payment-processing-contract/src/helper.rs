@@ -3,6 +3,7 @@ use soroban_sdk::{Address, Bytes, BytesN, Env, String};
 use crate::error::PaymentError;
 use crate::storage;
 use crate::types::{PaymentFilter, PaymentRecord, PaymentStatus, StatusFilter};
+use crate::error::PaymentError;
 
 /// Require that `caller` is the contract admin.
 pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
@@ -36,6 +37,38 @@ pub fn validate_amount(amount: i128) -> Result<(), PaymentError> {
     if amount <= 0 {
         return Err(PaymentError::InvalidAmount);
     }
+    Ok(())
+}
+
+/// Validate merchant string fields: name, description, contact_info
+pub fn validate_merchant_fields(
+    name: &String,
+    description: &String,
+    contact_info: &String,
+) -> Result<(), PaymentError> {
+    // name <= 64 bytes
+    let name_bytes = name.to_string().as_bytes();
+    if name_bytes.len() > 64 {
+        return Err(PaymentError::InvalidInput);
+    }
+
+    // description <= 256 bytes
+    let desc_bytes = description.to_string().as_bytes();
+    if desc_bytes.len() > 256 {
+        return Err(PaymentError::InvalidInput);
+    }
+
+    // contact_info <= 128 bytes and printable ASCII only
+    let contact_bytes = contact_info.to_string().as_bytes();
+    if contact_bytes.len() > 128 {
+        return Err(PaymentError::InvalidInput);
+    }
+    for &b in contact_bytes.iter() {
+        if b < 0x20 || b > 0x7E {
+            return Err(PaymentError::InvalidInput);
+        }
+    }
+
     Ok(())
 }
 

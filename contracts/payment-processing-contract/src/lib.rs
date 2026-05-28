@@ -55,6 +55,8 @@ impl PaymentContract {
         if storage::get_merchant(&env, &merchant_address).is_some() {
             return Err(PaymentError::MerchantAlreadyRegistered);
         }
+        // Validate merchant string fields
+        helper::validate_merchant_fields(&name, &description, &contact_info)?;
         let merchant = Merchant {
             address: merchant_address.clone(),
             name,
@@ -104,6 +106,11 @@ impl PaymentContract {
         merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
         payer.require_auth();
+
+        // Ensure the order's embedded payer matches the authenticated payer
+        if order.payer != payer {
+            return Err(PaymentError::InvalidInput);
+        }
 
         helper::validate_amount(order.amount)?;
         helper::validate_order_id(&order.order_id)?;
@@ -188,7 +195,7 @@ impl PaymentContract {
         sort_field: SortField,
         sort_order: SortOrder,
     ) -> Result<PaymentPage, PaymentError> {
-        merchant.require_auth();
+        helper::require_merchant(&env, &merchant, &merchant)?;
         let ids = storage::get_merchant_payment_ids(&env, &merchant);
         Self::paginate_payments(&env, ids, cursor, limit, filter, sort_field, sort_order)
     }
@@ -416,8 +423,9 @@ impl PaymentContract {
             .ok_or(PaymentError::PaymentNotFound)?;
         let admin = storage::get_admin(&env);
 
-        if caller != record.merchant_address && admin.as_ref() != Some(&caller) {
-            return Err(PaymentError::Unauthorized);
+        // Allow admin or the merchant (merchant must be active)
+        if admin.as_ref() != Some(&caller) {
+            helper::require_merchant(&env, &caller, &record.merchant_address)?;
         }
         if refund.status != RefundStatus::Pending {
             return Err(PaymentError::RefundAlreadyCompleted);
@@ -445,8 +453,9 @@ impl PaymentContract {
             .ok_or(PaymentError::PaymentNotFound)?;
         let admin = storage::get_admin(&env);
 
-        if caller != record.merchant_address && admin.as_ref() != Some(&caller) {
-            return Err(PaymentError::Unauthorized);
+        // Allow admin or the merchant (merchant must be active)
+        if admin.as_ref() != Some(&caller) {
+            helper::require_merchant(&env, &caller, &record.merchant_address)?;
         }
         if refund.status != RefundStatus::Pending {
             return Err(PaymentError::RefundAlreadyCompleted);
