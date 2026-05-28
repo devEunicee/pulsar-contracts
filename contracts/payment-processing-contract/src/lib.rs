@@ -9,10 +9,12 @@ mod types;
 
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod repro_tests;
 
 use alloc::vec::Vec as RustVec;
 use soroban_sdk::{
-    contract, contractimpl, token, xdr::ToXdr, Address, BytesN, Env, String, Vec,
+    contract, contractimpl, token, xdr::ToXdr, Address, Bytes, BytesN, Env, String, Vec,
 };
 
 use error::PaymentError;
@@ -131,9 +133,9 @@ impl PaymentContract {
             return Err(PaymentError::MerchantInactive);
         }
 
-        // Verify signature over order_id bytes as payload
-        let payload = order.order_id.clone();
-        let is_test_key = merchant_public_key == Bytes::from_array(&env, &[0u8; 32]);
+        // Verify signature over full order serialisation as payload
+        let payload = order.clone().to_xdr(&env);
+        let is_test_key = merchant_public_key == [0u8; 32];
         if !is_test_key {
             helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;
         }
@@ -233,7 +235,7 @@ impl PaymentContract {
             total_refund_volume: 0,
         };
 
-        let p_ids = storage::get_all_payment_ids(&env);
+        let p_ids = storage::get_global_payment_ids(&env);
         for id in p_ids.iter() {
             if let Some(record) = storage::get_payment(&env, &id) {
                 let mut matches = true;
@@ -470,7 +472,8 @@ impl PaymentContract {
         Ok(())
     }
 
-    pub fn execute_refund(env: Env, refund_id: Bytes) -> Result<(), PaymentError> {
+    pub fn execute_refund(env: Env, caller: Address, refund_id: Bytes) -> Result<(), PaymentError> {
+        caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
 
@@ -537,6 +540,15 @@ impl PaymentContract {
             return Err(PaymentError::InvalidInput);
         }
 
+        // Ensure no duplicate signers
+        let mut unique_signers = Vec::new(&env);
+        for signer in required_signers.iter() {
+            if unique_signers.contains(&signer) {
+                return Err(PaymentError::InvalidInput);
+            }
+            unique_signers.push_back(signer);
+        }
+
         let now = env.ledger().timestamp();
         let expires_at = now + storage::get_default_multisig_expiry(&env);
 
@@ -551,8 +563,7 @@ impl PaymentContract {
         };
         // Move funds from initiator into contract escrow to lock them.
         let token_client = token::Client::new(&env, &ms.order.token);
-        let contract_id = env.current_contract();
-        let contract_addr = Address::Contract(contract_id);
+        let contract_addr = env.current_contract_address();
         token_client.transfer(&initiator, &contract_addr, &ms.order.amount);
 
         storage::save_multisig(&env, &ms);
@@ -621,8 +632,7 @@ impl PaymentContract {
 
         // Release funds from contract escrow to merchant.
         let token_client = token::Client::new(&env, &order.token);
-        let contract_id = env.current_contract();
-        let contract_addr = Address::Contract(contract_id);
+        let contract_addr = env.current_contract_address();
         token_client.transfer(&contract_addr, &order.merchant_address, &order.amount);
 
         let record = PaymentRecord {
