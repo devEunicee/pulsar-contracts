@@ -1313,3 +1313,70 @@ fn test_payer_history_pagination() {
     let min_p2 = page2.records.get(0).unwrap().amount;
     assert!(min_p2 > max_p1);
 }
+
+// ── Issue #107: PaymentRecord description field ───────────────────────────────
+
+#[test]
+fn test_payment_record_description_from_signature_payment() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (pub_key, sig) = sign_order(&env, &order);
+    client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
+
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.description, str(&env, "Test order"));
+}
+
+#[test]
+fn test_payment_record_description_from_multisig_payment() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let signer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &signer, 5000);
+
+    let order = PaymentOrder {
+        order_id: bytes(&env, "MS_DESC_001"),
+        merchant_address: merchant.clone(),
+        payer: signer.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "Multisig description"),
+        expires_at: 0,
+    };
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer.clone());
+
+    client.initiate_multisig_payment(&signer, &bytes(&env, "MS_DESC_001"), &order, &signers);
+    client.sign_multisig_payment(&signer, &bytes(&env, "MS_DESC_001"));
+    client.execute_multisig_payment(&signer, &bytes(&env, "MS_DESC_001"));
+
+    let record = client.get_payment_by_id(&signer, &bytes(&env, "MS_DESC_001"));
+    assert_eq!(record.description, str(&env, "Multisig description"));
+}
