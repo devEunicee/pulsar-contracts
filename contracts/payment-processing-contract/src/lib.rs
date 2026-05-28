@@ -126,8 +126,8 @@ impl PaymentContract {
             return Err(PaymentError::MerchantInactive);
         }
 
-        // Verify signature over order_id bytes as payload
-        let payload = order.order_id.clone();
+        // Verify signature over full order serialisation as payload
+        let payload = order.clone().to_xdr(&env);
         let is_test_key = merchant_public_key == [0u8; 32];
         if !is_test_key {
             helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;

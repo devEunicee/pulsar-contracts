@@ -25,7 +25,7 @@ fn sign_order(env: &Env, order: &PaymentOrder) -> (BytesN<32>, BytesN<64>) {
     let signing_key = SigningKey::from_bytes(&[1u8; 32]);
     let public_key = signing_key.verifying_key();
 
-    let payload = order.order_id.clone();
+    let payload = order.clone().to_xdr(env);
     let mut payload_bytes = vec![0u8; payload.len() as usize];
     payload.copy_into_slice(&mut payload_bytes);
 
