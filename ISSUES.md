@@ -586,12 +586,12 @@
 
 ---
 
-### T-009 · No test for `approve_refund` by non-merchant, non-admin caller
+### T-009 · No test for `approve_refund` by non-merchant, non-admin caller [COMPLETED]
 
 **Description:** Unauthorised approval path is untested.
 
 **Acceptance Criteria:**
-- Test: random caller attempts `approve_refund` → `Unauthorized`
+- [x] Test: random caller attempts `approve_refund` → `Unauthorized`
 
 **Priority:** Medium
 **Effort:** Small
