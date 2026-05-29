@@ -374,6 +374,10 @@ impl PaymentContract {
         caller.require_auth();
         helper::validate_amount(amount)?;
 
+        if reason.len() > 256 {
+            return Err(PaymentError::InvalidInput);
+        }
+
         let record =
             storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
 
