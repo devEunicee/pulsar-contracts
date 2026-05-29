@@ -151,6 +151,7 @@ impl PaymentContract {
             token: order.token.clone(),
             amount: order.amount,
             refunded_amount: 0,
+            pending_refund_amount: 0,
             status: PaymentStatus::Completed,
             paid_at: now,
         };
@@ -373,7 +374,7 @@ impl PaymentContract {
         caller.require_auth();
         helper::validate_amount(amount)?;
 
-        let record =
+        let mut record =
             storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
 
         if caller != record.payer && caller != record.merchant_address {
@@ -385,7 +386,7 @@ impl PaymentContract {
             return Err(PaymentError::RefundWindowExpired);
         }
 
-        let new_total = record.refunded_amount + amount;
+        let new_total = record.refunded_amount + record.pending_refund_amount + amount;
         if new_total > record.amount {
             return Err(PaymentError::RefundAmountExceedsPayment);
         }
@@ -396,7 +397,7 @@ impl PaymentContract {
 
         let refund = RefundRecord {
             refund_id: refund_id.clone(),
-            order_id,
+            order_id: order_id.clone(),
             amount,
             reason,
             status: RefundStatus::Pending,
@@ -404,6 +405,9 @@ impl PaymentContract {
             initiated_at: now,
         };
         storage::save_refund(&env, &refund);
+
+        record.pending_refund_amount += amount;
+        storage::save_payment(&env, &record);
 
         env.events().publish(
             (String::from_str(&env, "refund_initiated"),),
@@ -465,6 +469,12 @@ impl PaymentContract {
 
         refund.status = RefundStatus::Rejected;
         storage::save_refund(&env, &refund);
+
+        let mut record = storage::get_payment(&env, &refund.order_id)
+            .ok_or(PaymentError::PaymentNotFound)?;
+        record.pending_refund_amount = record.pending_refund_amount.saturating_sub(refund.amount);
+        storage::save_payment(&env, &record);
+
         env.events().publish(
             (String::from_str(&env, "refund_rejected"),),
             refund_id,
@@ -493,6 +503,7 @@ impl PaymentContract {
 
         let new_total = record.refunded_amount + refund.amount;
         record.refunded_amount = new_total;
+        record.pending_refund_amount = record.pending_refund_amount.saturating_sub(refund.amount);
         record.status = if new_total == record.amount {
             PaymentStatus::FullyRefunded
         } else {
@@ -642,6 +653,7 @@ impl PaymentContract {
             token: order.token.clone(),
             amount: order.amount,
             refunded_amount: 0,
+            pending_refund_amount: 0,
             status: PaymentStatus::Completed,
             paid_at: now,
         };
