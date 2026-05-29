@@ -204,6 +204,34 @@ pub fn save_multisig(env: &Env, ms: &MultisigPayment) {
         .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
+// ── Whitelist ─────────────────────────────────────────────────────────────────
+
+pub fn is_whitelist_enabled(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::WhitelistEnabled)
+        .unwrap_or(false)
+}
+
+pub fn set_whitelist_enabled(env: &Env, enabled: bool) {
+    env.storage()
+        .instance()
+        .set(&DataKey::WhitelistEnabled, &enabled);
+}
+
+pub fn is_whitelisted(env: &Env, address: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Whitelist(address.clone()))
+        .unwrap_or(false)
+}
+
+pub fn set_whitelisted(env: &Env, address: &Address, approved: bool) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Whitelist(address.clone()), &approved);
+}
+
 // ── Config ────────────────────────────────────────────────────────────────────
 
 /// Default cleanup period: 90 days in seconds

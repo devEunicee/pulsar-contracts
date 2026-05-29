@@ -58,6 +58,12 @@ impl PaymentContract {
         if storage::get_merchant(&env, &merchant_address).is_some() {
             return Err(PaymentError::MerchantAlreadyRegistered);
         }
+        // Whitelist check: if enabled, merchant must be pre-approved by admin
+        if storage::is_whitelist_enabled(&env)
+            && !storage::is_whitelisted(&env, &merchant_address)
+        {
+            return Err(PaymentError::Unauthorized);
+        }
         // Validate merchant string fields
         helper::validate_merchant_fields(&name, &description, &contact_info)?;
         let merchant = Merchant {
@@ -75,6 +81,24 @@ impl PaymentContract {
             (String::from_str(&env, "merchant_registered"),),
             merchant_address,
         );
+        Ok(())
+    }
+
+    /// Enable or disable admin-whitelist mode for merchant registration.
+    pub fn set_whitelist_mode(env: Env, admin: Address, enabled: bool) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+        storage::set_whitelist_enabled(&env, enabled);
+        Ok(())
+    }
+
+    /// Pre-approve a merchant address so it can register when whitelist mode is on.
+    pub fn approve_merchant_registration(
+        env: Env,
+        admin: Address,
+        merchant_address: Address,
+    ) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+        storage::set_whitelisted(&env, &merchant_address, true);
         Ok(())
     }
 
