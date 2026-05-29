@@ -268,6 +268,30 @@ fn test_deactivate_merchant() {
     assert!(!m.active);
 }
 
+#[test]
+fn test_deactivate_merchant_emits_event() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    client.deactivate_merchant(&admin, &merchant);
+
+    let events = env.events().all();
+    let last = events.get(events.len() - 1).unwrap();
+    let topic: String = last.1.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, str(&env, "merchant_deactivated"));
+    let (deactivated_merchant, caller): (Address, Address) = last.2.into_val(&env);
+    assert_eq!(deactivated_merchant, merchant);
+    assert_eq!(caller, admin);
+}
+
 // ── Payment tests ─────────────────────────────────────────────────────────────
 
 #[test]

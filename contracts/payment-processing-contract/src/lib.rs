@@ -90,6 +90,10 @@ impl PaymentContract {
             storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)?;
         merchant.active = false;
         storage::save_merchant(&env, &merchant);
+        env.events().publish(
+            (String::from_str(&env, "merchant_deactivated"),),
+            (merchant_address, caller),
+        );
         Ok(())
     }
 
