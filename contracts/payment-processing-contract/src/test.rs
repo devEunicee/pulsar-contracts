@@ -449,6 +449,33 @@ fn test_successful_refund_flow() {
 }
 
 #[test]
+fn test_refund_reason_length_limit() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // 256 bytes: ok
+    let reason_ok = "r".repeat(256);
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_OK"),
+        &bytes(&env, "ORDER_001"),
+        &100,
+        &str(&env, &reason_ok),
+    );
+
+    // 257 bytes: fails
+    let reason_bad = "r".repeat(257);
+    let result = client.try_initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_BAD"),
+        &bytes(&env, "ORDER_001"),
+        &100,
+        &str(&env, &reason_bad),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
 fn test_refund_exceeds_payment_fails() {
     let (env, client) = setup();
     let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
