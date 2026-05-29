@@ -141,6 +141,43 @@ pub fn set_global_payment_ids(env: &Env, ids: &Vec<Bytes>) {
         .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
+pub fn remove_merchant_payment_id(env: &Env, merchant: &Address, order_id: &Bytes) {
+    let ids = get_merchant_payment_ids(env, merchant);
+    let mut new_ids = Vec::new(env);
+    for id in ids.iter() {
+        if id != *order_id {
+            new_ids.push_back(id);
+        }
+    }
+    env.storage()
+        .persistent()
+        .set(&DataKey::MerchantPayments(merchant.clone()), &new_ids);
+}
+
+pub fn remove_payer_payment_id(env: &Env, payer: &Address, order_id: &Bytes) {
+    let ids = get_payer_payment_ids(env, payer);
+    let mut new_ids = Vec::new(env);
+    for id in ids.iter() {
+        if id != *order_id {
+            new_ids.push_back(id);
+        }
+    }
+    env.storage()
+        .persistent()
+        .set(&DataKey::PayerPayments(payer.clone()), &new_ids);
+}
+
+pub fn remove_global_payment_id(env: &Env, order_id: &Bytes) {
+    let ids = get_global_payment_ids(env);
+    let mut new_ids = Vec::new(env);
+    for id in ids.iter() {
+        if id != *order_id {
+            new_ids.push_back(id);
+        }
+    }
+    set_global_payment_ids(env, &new_ids);
+}
+
 // ── Refund ────────────────────────────────────────────────────────────────────
 
 pub fn get_refund(env: &Env, refund_id: &Bytes) -> Option<RefundRecord> {
