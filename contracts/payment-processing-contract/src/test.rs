@@ -503,23 +503,11 @@ fn test_reject_refund() {
 #[test]
 fn test_get_merchant_payment_history() {
     let (env, client) = setup();
-    let admin = Address::generate(&env);
-    let merchant = Address::generate(&env);
-    let payer = Address::generate(&env);
-    let token = create_token(&env, &admin);
+    let (_admin, merchant, payer, token) = setup_paid_order(&env, &client);
 
-    client.set_admin(&admin);
-    client.register_merchant(
-        &merchant,
-        &str(&env, "Store"),
-        &str(&env, "desc"),
-        &str(&env, "c@c.com "),
-        &MerchantCategory::Retail,
-        &None,
-    );
-    mint(&env, &token, &admin, &payer, 10000);
-
-    for (id, amount) in [("ORDER_001", 100i128), ("ORDER_002", 200), ("ORDER_003", 300)] {
+    // Add two more payments on top of the one from setup_paid_order
+    mint(&env, &token, &_admin, &payer, 10000);
+    for (id, amount) in [("ORDER_002", 200i128), ("ORDER_003", 300)] {
         let order = PaymentOrder {
             order_id: bytes(&env, id),
             merchant_address: merchant.clone(),
@@ -529,7 +517,7 @@ fn test_get_merchant_payment_history() {
             description: str(&env, "desc"),
             expires_at: 0,
         };
-        let (pub_key, sig) = sign_order(&env, &order);
+        let (_pk, sig) = sign_order(&env, &order);
         client.process_payment_with_signature(&payer, &order, &sig);
     }
 
@@ -660,6 +648,7 @@ fn test_initiate_multisig_duplicate_signer_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com"),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &signer1, 5000);
 
@@ -694,35 +683,10 @@ fn test_set_cleanup_period() {
 #[test]
 fn test_get_global_stats_with_filtering() {
     let (env, client) = setup();
-    let admin = Address::generate(&env);
-    let merchant = Address::generate(&env);
-    let payer = Address::generate(&env);
-    let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
-    client.register_merchant(
-        &merchant,
-        &str(&env, "Store"),
-        &str(&env, "desc"),
-        &str(&env, "c@c.com"),
-        &MerchantCategory::Retail,
-        &None,
-    );
-    mint(&env, &token, &admin, &payer, 10000);
-
-    // Payment 1: t=1000
+    // Payment 1: t=1000 (amount=1000 from setup_paid_order)
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let order1 = PaymentOrder {
-        order_id: bytes(&env, "ORDER_001"),
-        merchant_address: merchant.clone(),
-        payer: payer.clone(),
-        token: token.clone(),
-        amount: 1000,
-        description: str(&env, "p1"),
-        expires_at: 0,
-    };
-    let (pk1, sig1) = sign_order(&env, &order1);
-    client.process_payment_with_signature(&payer, &order1, &sig1);
+    let (admin, merchant, payer, token) = setup_paid_order(&env, &client);
 
     // Payment 2: t=2000
     env.ledger().with_mut(|l| l.timestamp = 2000);
@@ -735,7 +699,7 @@ fn test_get_global_stats_with_filtering() {
         description: str(&env, "p2"),
         expires_at: 0,
     };
-    let (pk2, sig2) = sign_order(&env, &order2);
+    let (_pk2, sig2) = sign_order(&env, &order2);
     client.process_payment_with_signature(&payer, &order2, &sig2);
 
     // Refund for Payment 1: initiated at t=3000, executed at t=4000
@@ -846,7 +810,6 @@ fn test_multisig_payment_expiry() {
         &MerchantCategory::Retail,
         &None,
     );
-
     mint(&env, &token, &admin, &signer1, 5000);
 
     let order = make_order(&env, &merchant, &signer1, &token);
