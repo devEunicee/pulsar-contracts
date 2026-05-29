@@ -422,7 +422,11 @@ fn setup_paid_order(
 #[test]
 fn test_successful_refund_flow() {
     let (env, client) = setup();
-    let (_admin, merchant, payer, _token) = setup_paid_order(&env, &client);
+    let (_admin, merchant, payer, token) = setup_paid_order(&env, &client);
+
+    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
+    let payer_balance_before = token_client.balance(&payer);
+    let merchant_balance_before = token_client.balance(&merchant);
 
     client.initiate_refund(
         &payer,
@@ -446,6 +450,38 @@ fn test_successful_refund_flow() {
     let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
     assert_eq!(record.refunded_amount, 500);
     assert_eq!(record.status, PaymentStatus::PartiallyRefunded);
+
+    // Balance assertions: payer receives refund, merchant pays it
+    assert_eq!(token_client.balance(&payer), payer_balance_before + 500);
+    assert_eq!(token_client.balance(&merchant), merchant_balance_before - 500);
+}
+
+#[test]
+fn test_full_refund_flow_with_balance_assertions() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, token) = setup_paid_order(&env, &client);
+
+    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
+    let payer_balance_before = token_client.balance(&payer);
+    let merchant_balance_before = token_client.balance(&merchant);
+
+    // Full refund of 1000
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_FULL"),
+        &bytes(&env, "ORDER_001"),
+        &1000,
+        &str(&env, "Full refund"),
+    );
+    client.approve_refund(&merchant, &bytes(&env, "REFUND_FULL"));
+    client.execute_refund(&merchant, &bytes(&env, "REFUND_FULL"));
+
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.refunded_amount, 1000);
+    assert_eq!(record.status, PaymentStatus::FullyRefunded);
+
+    assert_eq!(token_client.balance(&payer), payer_balance_before + 1000);
+    assert_eq!(token_client.balance(&merchant), merchant_balance_before - 1000);
 }
 
 #[test]
