@@ -684,6 +684,73 @@ fn test_initiate_multisig_duplicate_signer_fails() {
 // ── Admin config tests ────────────────────────────────────────────────────────
 
 #[test]
+fn test_archive_payment_record_removes_from_indexes() {
+    let (env, client) = setup();
+    let (admin, merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Verify payment exists and appears in history
+    let page = client.get_merchant_payment_history(
+        &merchant,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+
+    // Archive the payment
+    client.archive_payment_record(&admin, &bytes(&env, "ORDER_001"));
+
+    // Payment should no longer be retrievable
+    let result = client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
+
+    // Merchant history should be empty
+    let page = client.get_merchant_payment_history(
+        &merchant,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 0);
+
+    // Payer history should be empty
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 0);
+}
+
+#[test]
+fn test_archive_payment_record_non_admin_fails() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    let result = client.try_archive_payment_record(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
+fn test_archive_payment_record_not_found_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.set_admin(&admin);
+
+    let result = client.try_archive_payment_record(&admin, &bytes(&env, "NONEXISTENT"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
+}
+
+
+
+#[test]
 fn test_set_cleanup_period() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
