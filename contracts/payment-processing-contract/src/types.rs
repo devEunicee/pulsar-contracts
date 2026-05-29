@@ -158,6 +158,7 @@ pub struct GlobalStats {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
+    ContractVersion,
     Merchant(Address),
     Payment(Bytes),
     MerchantPayments(Address),

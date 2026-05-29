@@ -174,12 +174,45 @@ stellar contract invoke \
 
 #### `set_admin`
 
-One-time initialisation. Caller becomes admin.
+One-time initialisation. Caller becomes admin. Sets contract version to `1`.
 
 ```bash
 stellar contract invoke --id $CONTRACT_ID --source-account <KEY> --network local \
   -- set_admin --admin <ADDRESS>
 ```
+
+#### `get_version`
+
+Returns the current contract version (u32).
+
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <KEY> --network local \
+  -- get_version
+```
+
+#### `upgrade`
+
+Upgrades the contract WASM in-place. Admin only. Existing storage and contract address are preserved.
+
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network local \
+  -- upgrade \
+  --admin <ADMIN_ADDRESS> \
+  --new_wasm_hash <32_BYTE_HEX>
+```
+
+**Upgrade procedure:**
+
+1. Build the new WASM: `cargo build --target wasm32-unknown-unknown --release`
+2. Upload the WASM to the network and obtain its hash:
+   ```bash
+   stellar contract upload \
+     --wasm target/wasm32-unknown-unknown/release/payment_processing_contract.wasm \
+     --source-account <ADMIN_KEY> \
+     --network testnet
+   ```
+3. Call `upgrade` with the returned hash.
+4. Verify with `get_version`.
 
 ---
 

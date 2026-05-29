@@ -211,6 +211,14 @@ fn test_set_admin_twice_fails() {
     assert_eq!(result, Err(Ok(PaymentError::AdminAlreadySet)));
 }
 
+#[test]
+fn test_get_version_after_set_admin() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.set_admin(&admin);
+    assert_eq!(client.get_version(), 1);
+}
+
 // ── Merchant tests ────────────────────────────────────────────────────────────
 
 #[test]
