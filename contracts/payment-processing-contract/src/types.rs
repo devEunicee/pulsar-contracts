@@ -22,6 +22,7 @@ pub struct Merchant {
     pub category: MerchantCategory,
     pub active: bool,
     pub registered_at: u64,
+    pub signing_public_key: Option<BytesN<32>>,
 }
 
 // ── Payment ───────────────────────────────────────────────────────────────────
