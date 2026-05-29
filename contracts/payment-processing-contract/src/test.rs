@@ -683,6 +683,83 @@ fn test_initiate_multisig_duplicate_signer_fails() {
 
 // ── Admin config tests ────────────────────────────────────────────────────────
 
+// ── Whitelist tests ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_whitelist_mode_blocks_unregistered_merchant() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admin);
+
+    client.set_whitelist_mode(&admin, &true);
+
+    let result = client.try_register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
+fn test_whitelist_mode_allows_approved_merchant() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admin);
+
+    client.set_whitelist_mode(&admin, &true);
+    client.approve_merchant_registration(&admin, &merchant);
+
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    let m = client.get_merchant(&merchant);
+    assert!(m.active);
+}
+
+#[test]
+fn test_whitelist_disabled_allows_open_registration() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admin);
+
+    // Whitelist mode off by default
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    let m = client.get_merchant(&merchant);
+    assert!(m.active);
+}
+
+#[test]
+fn test_set_whitelist_mode_non_admin_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let other = Address::generate(&env);
+    client.set_admin(&admin);
+
+    let result = client.try_set_whitelist_mode(&other, &true);
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+
+
 #[test]
 fn test_set_cleanup_period() {
     let (env, client) = setup();

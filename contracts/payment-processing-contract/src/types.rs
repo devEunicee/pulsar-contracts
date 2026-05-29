@@ -170,4 +170,6 @@ pub enum DataKey {
     GlobalStats,
     AllPayments,
     AllRefunds,
+    WhitelistEnabled,
+    Whitelist(Address),
 }
