@@ -460,6 +460,26 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
 
 ---
 
+## TTL Strategy
+
+Soroban persistent storage entries expire after a ledger TTL. Without active renewal, long-lived records (payments, merchants, refunds) would be evicted and become permanently inaccessible.
+
+**Constants** (defined in `storage.rs`):
+
+| Constant | Value | Description |
+|---|---|---|
+| `TTL_LEDGERS` | 6,307,200 | ~1 year at 5-second ledger close time |
+| `TTL_THRESHOLD` | 3,153,600 | ~6 months — refresh TTL when remaining life drops below this |
+
+**Strategy**: every `get_*` and `save_*` call on a persistent entry calls `env.storage().persistent().extend_ttl(key, TTL_THRESHOLD, TTL_LEDGERS)`. This means:
+
+- A record's TTL is reset to ~1 year on every read or write.
+- Records that are never accessed will expire after ~1 year and be evicted by the network.
+- Frequently accessed records (active merchants, recent payments) are automatically kept alive.
+- Instance storage (admin, config, stats) is managed by the Soroban host and does not require manual TTL extension.
+
+---
+
 ## Troubleshooting
 
 **Build errors** — ensure the WASM target is installed:

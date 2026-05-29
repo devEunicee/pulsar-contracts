@@ -1,7 +1,14 @@
-use soroban_sdk::{Address, Bytes, Env, String, Vec};
+use soroban_sdk::{Address, Bytes, Env, Vec};
 
 use crate::error::PaymentError;
 use crate::types::{DataKey, GlobalStats, Merchant, MultisigPayment, PaymentRecord, RefundRecord};
+
+// ── TTL constants ─────────────────────────────────────────────────────────────
+
+/// ~1 year in ledgers (5-second ledger close time).
+pub const TTL_LEDGERS: u32 = 6_307_200;
+/// Refresh TTL when remaining lifetime drops below ~6 months.
+pub const TTL_THRESHOLD: u32 = TTL_LEDGERS / 2;
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
@@ -16,29 +23,43 @@ pub fn set_admin(env: &Env, admin: &Address) {
 // ── Merchant ──────────────────────────────────────────────────────────────────
 
 pub fn get_merchant(env: &Env, address: &Address) -> Option<Merchant> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Merchant(address.clone()))
+    let key = DataKey::Merchant(address.clone());
+    let result = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
 }
 
 pub fn save_merchant(env: &Env, merchant: &Merchant) {
+    let key = DataKey::Merchant(merchant.address.clone());
+    env.storage().persistent().set(&key, merchant);
     env.storage()
         .persistent()
-        .set(&DataKey::Merchant(merchant.address.clone()), merchant);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
 // ── Payment ───────────────────────────────────────────────────────────────────
 
 pub fn get_payment(env: &Env, order_id: &Bytes) -> Option<PaymentRecord> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Payment(order_id.clone()))
+    let key = DataKey::Payment(order_id.clone());
+    let result = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
 }
 
 pub fn save_payment(env: &Env, record: &PaymentRecord) {
+    let key = DataKey::Payment(record.order_id.clone());
+    env.storage().persistent().set(&key, record);
     env.storage()
         .persistent()
-        .set(&DataKey::Payment(record.order_id.clone()), record);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
 pub fn remove_payment(env: &Env, order_id: &Bytes) {
@@ -50,97 +71,137 @@ pub fn remove_payment(env: &Env, order_id: &Bytes) {
 // ── Payment index lists ───────────────────────────────────────────────────────
 
 pub fn get_merchant_payment_ids(env: &Env, merchant: &Address) -> Vec<Bytes> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::MerchantPayments(merchant.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+    let key = DataKey::MerchantPayments(merchant.clone());
+    let result: Option<Vec<Bytes>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result.unwrap_or_else(|| Vec::new(env))
 }
 
 pub fn push_merchant_payment_id(env: &Env, merchant: &Address, order_id: &Bytes) {
     let mut ids = get_merchant_payment_ids(env, merchant);
     ids.push_back(order_id.clone());
+    let key = DataKey::MerchantPayments(merchant.clone());
+    env.storage().persistent().set(&key, &ids);
     env.storage()
         .persistent()
-        .set(&DataKey::MerchantPayments(merchant.clone()), &ids);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
 pub fn get_payer_payment_ids(env: &Env, payer: &Address) -> Vec<Bytes> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::PayerPayments(payer.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+    let key = DataKey::PayerPayments(payer.clone());
+    let result: Option<Vec<Bytes>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result.unwrap_or_else(|| Vec::new(env))
 }
 
 pub fn push_payer_payment_id(env: &Env, payer: &Address, order_id: &Bytes) {
     let mut ids = get_payer_payment_ids(env, payer);
     ids.push_back(order_id.clone());
+    let key = DataKey::PayerPayments(payer.clone());
+    env.storage().persistent().set(&key, &ids);
     env.storage()
         .persistent()
-        .set(&DataKey::PayerPayments(payer.clone()), &ids);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
 pub fn get_global_payment_ids(env: &Env) -> Vec<Bytes> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::GlobalPaymentIndex)
-        .unwrap_or_else(|| Vec::new(env))
+    let key = DataKey::GlobalPaymentIndex;
+    let result: Option<Vec<Bytes>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result.unwrap_or_else(|| Vec::new(env))
 }
 
 pub fn push_global_payment_id(env: &Env, order_id: &Bytes) {
     let mut ids = get_global_payment_ids(env);
     ids.push_back(order_id.clone());
+    let key = DataKey::GlobalPaymentIndex;
+    env.storage().persistent().set(&key, &ids);
     env.storage()
         .persistent()
-        .set(&DataKey::GlobalPaymentIndex, &ids);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
 pub fn set_global_payment_ids(env: &Env, ids: &Vec<Bytes>) {
+    let key = DataKey::GlobalPaymentIndex;
+    env.storage().persistent().set(&key, ids);
     env.storage()
         .persistent()
-        .set(&DataKey::GlobalPaymentIndex, ids);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
 // ── Refund ────────────────────────────────────────────────────────────────────
 
 pub fn get_refund(env: &Env, refund_id: &Bytes) -> Option<RefundRecord> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Refund(refund_id.clone()))
+    let key = DataKey::Refund(refund_id.clone());
+    let result = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
 }
 
 pub fn save_refund(env: &Env, refund: &RefundRecord) {
+    let key = DataKey::Refund(refund.refund_id.clone());
+    env.storage().persistent().set(&key, refund);
     env.storage()
         .persistent()
-        .set(&DataKey::Refund(refund.refund_id.clone()), refund);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
 pub fn get_all_refund_ids(env: &Env) -> Vec<Bytes> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::AllRefunds)
-        .unwrap_or_else(|| Vec::new(env))
+    let key = DataKey::AllRefunds;
+    let result: Option<Vec<Bytes>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result.unwrap_or_else(|| Vec::new(env))
 }
 
 pub fn push_all_refund_id(env: &Env, refund_id: &Bytes) {
     let mut ids = get_all_refund_ids(env);
     ids.push_back(refund_id.clone());
+    let key = DataKey::AllRefunds;
+    env.storage().persistent().set(&key, &ids);
     env.storage()
         .persistent()
-        .set(&DataKey::AllRefunds, &ids);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
 // ── Multisig ──────────────────────────────────────────────────────────────────
 
 pub fn get_multisig(env: &Env, payment_id: &Bytes) -> Option<MultisigPayment> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Multisig(payment_id.clone()))
+    let key = DataKey::Multisig(payment_id.clone());
+    let result = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
 }
 
 pub fn save_multisig(env: &Env, ms: &MultisigPayment) {
+    let key = DataKey::Multisig(ms.payment_id.clone());
+    env.storage().persistent().set(&key, ms);
     env.storage()
         .persistent()
-        .set(&DataKey::Multisig(ms.payment_id.clone()), ms);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
