@@ -36,6 +36,7 @@ impl PaymentContract {
         if storage::get_admin(&env).is_some() {
             return Err(PaymentError::AdminAlreadySet);
         }
+        helper::validate_admin_address(&env, &admin)?;
         admin.require_auth();
         storage::set_admin(&env, &admin);
         env.events()
@@ -140,10 +141,6 @@ impl PaymentContract {
             helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;
         }
 
-        // Transfer tokens from payer to merchant
-        let token_client = token::Client::new(&env, &order.token);
-        token_client.transfer(&payer, &order.merchant_address, &order.amount);
-
         let record = PaymentRecord {
             order_id: order.order_id.clone(),
             merchant_address: order.merchant_address.clone(),
@@ -160,6 +157,11 @@ impl PaymentContract {
         storage::push_payer_payment_id(&env, &payer, &order.order_id);
         storage::push_global_payment_id(&env, &order.order_id);
         storage::increment_payment_stats(&env, order.amount);
+
+        // Commit payment state before the external token transfer to reduce
+        // re-entrancy risk in external contracts.
+        let token_client = token::Client::new(&env, &order.token);
+        token_client.transfer(&payer, &order.merchant_address, &order.amount);
 
         env.events().publish(
             (String::from_str(&env, "payment_processed"),),
@@ -488,9 +490,6 @@ impl PaymentContract {
             return Err(PaymentError::Unauthorized);
         }
 
-        let token_client = token::Client::new(&env, &record.token);
-        token_client.transfer(&record.merchant_address, &record.payer, &refund.amount);
-
         let new_total = record.refunded_amount + refund.amount;
         record.refunded_amount = new_total;
         record.status = if new_total == record.amount {
@@ -504,6 +503,11 @@ impl PaymentContract {
         storage::save_refund(&env, &refund);
         storage::push_all_refund_id(&env, &refund_id);
         storage::increment_refund_stats(&env, refund.amount)?;
+
+        // Commit refund and payment state before the external token transfer to
+        // reduce re-entrancy risk in external contracts.
+        let token_client = token::Client::new(&env, &record.token);
+        token_client.transfer(&record.merchant_address, &record.payer, &refund.amount);
 
         env.events().publish(
             (String::from_str(&env, "refund_executed"),),

@@ -15,6 +15,19 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
     Ok(())
 }
 
+/// Validate that `admin` is not the zero/burn address.
+pub fn validate_admin_address(env: &Env, admin: &Address) -> Result<(), PaymentError> {
+    // The Soroban SDK does not expose a dedicated zero/burn address validation API
+    // for `Address`. This is a best-effort guard against a zero-address
+    // representation when the SDK serialization exposes it.
+    let admin_xdr = admin.clone().to_xdr(env);
+    let all_zero = admin_xdr.iter().all(|&b| b == 0);
+    if all_zero {
+        return Err(PaymentError::InvalidInput);
+    }
+    Ok(())
+}
+
 /// Require that `caller` is the registered merchant at `merchant_address`.
 pub fn require_merchant(
     env: &Env,

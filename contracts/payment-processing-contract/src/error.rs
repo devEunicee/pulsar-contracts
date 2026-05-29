@@ -37,5 +37,4 @@ pub enum PaymentError {
 
     // General
     InvalidInput = 50,
-    StorageError = 51,
 }
