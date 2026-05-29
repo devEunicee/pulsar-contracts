@@ -1313,3 +1313,65 @@ fn test_payer_history_pagination() {
     let min_p2 = page2.records.get(0).unwrap().amount;
     assert!(min_p2 > max_p1);
 }
+
+// ── T-013: Concurrent refund race condition tests ─────────────────────────────
+
+#[test]
+fn test_concurrent_refunds_within_limit_both_succeed() {
+    // Two refunds initiated in the same ledger; combined amount <= payment → both succeed
+    let (env, client) = setup();
+    let (_admin, merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Initiate two refunds totalling 1000 (== payment amount)
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "R_CONC_1"),
+        &bytes(&env, "ORDER_001"),
+        &600,
+        &str(&env, "first"),
+    );
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "R_CONC_2"),
+        &bytes(&env, "ORDER_001"),
+        &400,
+        &str(&env, "second"),
+    );
+
+    // Approve and execute both
+    client.approve_refund(&merchant, &bytes(&env, "R_CONC_1"));
+    client.execute_refund(&merchant, &bytes(&env, "R_CONC_1"));
+
+    client.approve_refund(&merchant, &bytes(&env, "R_CONC_2"));
+    client.execute_refund(&merchant, &bytes(&env, "R_CONC_2"));
+
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.refunded_amount, 1000);
+    assert_eq!(record.status, PaymentStatus::FullyRefunded);
+}
+
+#[test]
+fn test_concurrent_refunds_exceeding_limit_second_rejected() {
+    // Two refunds initiated; combined amount > payment → second initiation is rejected
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // First refund: 700 (within limit)
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "R_RACE_1"),
+        &bytes(&env, "ORDER_001"),
+        &700,
+        &str(&env, "first"),
+    );
+
+    // Second refund: 400 — combined 1100 > 1000 → must fail
+    let result = client.try_initiate_refund(
+        &payer,
+        &bytes(&env, "R_RACE_2"),
+        &bytes(&env, "ORDER_001"),
+        &400,
+        &str(&env, "second"),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::RefundAmountExceedsPayment)));
+}
