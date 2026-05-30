@@ -272,6 +272,47 @@ fn test_deactivate_merchant() {
     assert!(!m.active);
 }
 
+#[test]
+fn test_reactivate_merchant_success() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    // Deactivate
+    client.deactivate_merchant(&admin, &merchant);
+    let m = client.get_merchant(&merchant);
+    assert!(!m.active);
+
+    // Try payment (should fail)
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (pub_key, sig) = sign_order(&env, &order);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig);
+    assert_eq!(result, Err(Ok(PaymentError::MerchantInactive)));
+
+    // Reactivate
+    client.reactivate_merchant(&merchant, &merchant);
+    let m = client.get_merchant(&merchant);
+    assert!(m.active);
+
+    // Process payment
+    client.process_payment_with_signature(&payer, &order, &sig);
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.status, PaymentStatus::Completed);
+}
+
 // ── Payment tests ─────────────────────────────────────────────────────────────
 
 #[test]

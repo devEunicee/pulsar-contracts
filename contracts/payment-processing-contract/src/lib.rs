@@ -158,6 +158,10 @@ impl PaymentContract {
             return Err(PaymentError::MerchantInactive);
         }
 
+        let merchant_public_key = merchant
+            .signing_public_key
+            .unwrap_or_else(|| BytesN::from_array(&env, &[0u8; 32]));
+
         // Verify signature over full order serialisation as payload
         let payload = order.clone().to_xdr(&env);
         let is_test_key = merchant_public_key == [0u8; 32];
@@ -737,6 +741,30 @@ impl PaymentContract {
             };
             match sort_order {
                 SortOrder::Ascending => v1.cmp(&v2),
+                SortOrder::Descending => v2.cmp(&v1),
+            }
+        });
+
+        let next_cursor = if records.len() > cap {
+            records.get(cap - 1).map(|r| r.order_id.clone())
+        } else {
+            None
+        };
+
+        // Truncate to cap and convert back to Soroban Vec
+        let mut page: Vec<PaymentRecord> = Vec::new(env);
+        for i in 0..(records.len().min(cap)) {
+            page.push_back(records[i].clone());
+        }
+
+        Ok(PaymentPage {
+            records: page,
+            next_cursor,
+            total,
+        })
+    }
+}
+ending => v1.cmp(&v2),
                 SortOrder::Descending => v2.cmp(&v1),
             }
         });
