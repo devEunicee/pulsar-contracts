@@ -22,12 +22,19 @@ pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
 }
 
-pub fn get_admin_config(env: &Env) -> Option<AdminConfig> {
-    env.storage().instance().get(&DataKey::AdminConfig)
+// ── Contract version ──────────────────────────────────────────────────────────
+
+pub fn get_contract_version(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::ContractVersion)
+        .unwrap_or(0)
 }
 
-pub fn set_admin_config(env: &Env, config: &AdminConfig) {
-    env.storage().instance().set(&DataKey::AdminConfig, config);
+pub fn set_contract_version(env: &Env, version: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ContractVersion, &version);
 }
 
 // ── Merchant ──────────────────────────────────────────────────────────────────
@@ -79,6 +86,8 @@ pub fn remove_payment(env: &Env, order_id: &Bytes) {
 }
 
 // ── Payment index lists ───────────────────────────────────────────────────────
+
+const CHUNK_SIZE: u32 = 100;
 
 pub fn get_merchant_payment_ids(env: &Env, merchant: &Address) -> Vec<Bytes> {
     let key = DataKey::MerchantPayments(merchant.clone());
@@ -287,6 +296,8 @@ pub const DEFAULT_CLEANUP_PERIOD: u64 = 7_776_000;
 pub const REFUND_WINDOW: u64 = 2_592_000;
 /// Default multisig expiry: 24 hours in seconds
 pub const DEFAULT_MULTISIG_EXPIRY: u64 = 86_400;
+/// Maximum number of signers for a multisig payment
+pub const MAX_SIGNERS: u32 = 10;
 
 pub fn get_cleanup_period(env: &Env) -> u64 {
     env.storage()
@@ -332,17 +343,24 @@ pub fn save_global_stats(env: &Env, stats: &GlobalStats) {
     env.storage().instance().set(&DataKey::GlobalStats, stats);
 }
 
-pub fn increment_payment_stats(env: &Env, amount: i128) {
+pub fn increment_payment_stats(env: &Env, amount: i128) -> Result<(), PaymentError> {
     let mut stats = get_global_stats(env);
     stats.total_payments += 1;
-    stats.total_volume += amount;
+    stats.total_volume = stats
+        .total_volume
+        .checked_add(amount)
+        .ok_or(PaymentError::ArithmeticError)?;
     save_global_stats(env, &stats);
+    Ok(())
 }
 
 pub fn increment_refund_stats(env: &Env, amount: i128) -> Result<(), PaymentError> {
     let mut stats = get_global_stats(env);
     stats.total_refunds += 1;
-    stats.total_refund_volume += amount;
+    stats.total_refund_volume = stats
+        .total_refund_volume
+        .checked_add(amount)
+        .ok_or(PaymentError::ArithmeticError)?;
     save_global_stats(env, &stats);
     Ok(())
 }

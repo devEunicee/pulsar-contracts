@@ -146,6 +146,32 @@ Save the returned contract ID as `CONTRACT_ID`.
 
 ## Deployment
 
+### Prerequisites — Keys
+
+Before deploying you need a Stellar keypair and a funded account.
+
+**Generate a keypair:**
+
+```bash
+stellar keys generate --global deployer
+stellar keys address deployer        # prints your public key (G...)
+stellar keys show deployer           # prints your secret key (S...) — keep this private
+```
+
+**Fund your testnet account via Friendbot:**
+
+Testnet accounts start with zero balance. Friendbot is a faucet that credits 10 000 XLM to any new address:
+
+```bash
+curl "https://friendbot.stellar.org?addr=$(stellar keys address deployer)"
+```
+
+Or open the URL in a browser. Once funded, use the secret key wherever `<TESTNET_SECRET_KEY>` or `<ADMIN_SECRET_KEY>` appears below.
+
+`$CONTRACT_ID` is the contract address printed by `stellar contract deploy` — save it immediately after running the deploy command.
+
+---
+
 ### Testnet
 
 ```bash
@@ -174,12 +200,45 @@ stellar contract invoke \
 
 #### `set_admin`
 
-One-time initialisation. Caller becomes admin.
+One-time initialisation. Caller becomes admin. Sets contract version to `1`.
 
 ```bash
 stellar contract invoke --id $CONTRACT_ID --source-account <KEY> --network local \
   -- set_admin --admin <ADDRESS>
 ```
+
+#### `get_version`
+
+Returns the current contract version (u32).
+
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <KEY> --network local \
+  -- get_version
+```
+
+#### `upgrade`
+
+Upgrades the contract WASM in-place. Admin only. Existing storage and contract address are preserved.
+
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network local \
+  -- upgrade \
+  --admin <ADMIN_ADDRESS> \
+  --new_wasm_hash <32_BYTE_HEX>
+```
+
+**Upgrade procedure:**
+
+1. Build the new WASM: `cargo build --target wasm32-unknown-unknown --release`
+2. Upload the WASM to the network and obtain its hash:
+   ```bash
+   stellar contract upload \
+     --wasm target/wasm32-unknown-unknown/release/payment_processing_contract.wasm \
+     --source-account <ADMIN_KEY> \
+     --network testnet
+   ```
+3. Call `upgrade` with the returned hash.
+4. Verify with `get_version`.
 
 ---
 
@@ -420,6 +479,7 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
 |---|---|
 | `admin_set` | `set_admin` |
 | `merchant_registered` | `register_merchant` |
+| `merchant_deactivated` | `deactivate_merchant` |
 | `payment_processed` | `process_payment_with_signature` |
 | `refund_initiated` | `initiate_refund` |
 | `refund_approved` | `approve_refund` |

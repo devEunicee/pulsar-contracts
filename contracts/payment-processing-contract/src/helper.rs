@@ -14,22 +14,15 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
     Ok(())
 }
 
-/// Require that a set of `callers` meet the N-of-M admin threshold.
-pub fn require_multi_admin(env: &Env, callers: Vec<Address>) -> Result<(), PaymentError> {
-    let config = storage::get_admin_config(env).ok_or(PaymentError::Unauthorized)?;
-    let mut authorized_count = 0;
-    let mut seen = Vec::new(env);
-
-    for caller in callers.iter() {
-        if config.admins.contains(&caller) && !seen.contains(&caller) {
-            caller.require_auth();
-            authorized_count += 1;
-            seen.push_back(caller);
-        }
-    }
-
-    if authorized_count < config.threshold {
-        return Err(PaymentError::Unauthorized);
+/// Validate that `admin` is not the zero/burn address.
+pub fn validate_admin_address(env: &Env, admin: &Address) -> Result<(), PaymentError> {
+    // The Soroban SDK does not expose a dedicated zero/burn address validation API
+    // for `Address`. This is a best-effort guard against a zero-address
+    // representation when the SDK serialization exposes it.
+    let admin_xdr = admin.clone().to_xdr(env);
+    let all_zero = admin_xdr.iter().all(|&b| b == 0);
+    if all_zero {
+        return Err(PaymentError::InvalidInput);
     }
     Ok(())
 }

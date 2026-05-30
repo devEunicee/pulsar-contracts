@@ -148,28 +148,23 @@ fn test_pagination_cursor_inverted() {
 }
 
 #[test]
-fn test_multisig_admin_n_of_m() {
+fn test_initiate_multisig_max_signers_exceeded() {
     let (env, client) = setup();
-    let admin1 = Address::generate(&env);
-    let admin2 = Address::generate(&env);
-    let admin3 = Address::generate(&env);
-    
-    let admins = vec![&env, admin1.clone(), admin2.clone(), admin3.clone()];
-    client.set_admin(&admins, &2); // 2-of-3
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
 
-    // 1 admin signature should fail
-    let result = client.try_set_whitelist_mode(&vec![&env, admin1.clone()], &true);
-    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+    client.set_admin(&admin);
+    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail);
+    mint(&env, &token, &admin, &payer, 1000);
 
-    // 2 admin signatures should succeed
-    client.set_whitelist_mode(&vec![&env, admin1.clone(), admin2.clone()], &true);
-    
-    // 3 admin signatures should succeed
-    client.set_whitelist_mode(&vec![&env, admin1.clone(), admin2.clone(), admin3.clone()], &false);
+    let mut signers = Vec::new(&env);
+    for _ in 0..11 {
+        signers.push_back(Address::generate(&env));
+    }
 
-    // Duplicate signatures from same admin should still only count as 1
-    let result = client.try_set_whitelist_mode(&vec![&env, admin1.clone(), admin1.clone()], &true);
-    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+    let order = make_order(&env, &merchant, &payer, &token);
+    let result = client.try_initiate_multisig_payment(&payer, &bytes(&env, "MS_MAX"), &order, &signers);
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
 }
-
-

@@ -56,8 +56,10 @@ pub struct PaymentRecord {
     pub token: Address,
     pub amount: i128,
     pub refunded_amount: i128,
+    pub pending_refund_amount: i128,
     pub status: PaymentStatus,
     pub paid_at: u64,
+    pub description: String,
 }
 
 // ── Refund ────────────────────────────────────────────────────────────────────
@@ -167,16 +169,19 @@ pub struct AdminConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
-    AdminConfig,
+    ContractVersion,
     Merchant(Address),
     Payment(Bytes),
-    MerchantPayments(Address),
-    PayerPayments(Address),
+    MerchantPaymentChunk(Address, u32),
+    MerchantPaymentCount(Address),
+    PayerPaymentChunk(Address, u32),
+    PayerPaymentCount(Address),
     Refund(Bytes),
     Multisig(Bytes),
     CleanupPeriod,
     DefaultMultisigExpiry,
-    GlobalPaymentIndex,
+    GlobalPaymentChunk(u32),
+    GlobalPaymentCount,
     GlobalStats,
     AllPayments,
     AllRefunds,
