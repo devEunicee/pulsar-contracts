@@ -272,6 +272,44 @@ fn test_deactivate_merchant() {
     assert!(!m.active);
 }
 
+#[test]
+fn test_deactivate_merchant_unauthorized_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let other = Address::generate(&env);
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    let result = client.try_deactivate_merchant(&other, &merchant);
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
+fn test_merchant_deactivates_self() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    client.deactivate_merchant(&merchant, &merchant);
+    let m = client.get_merchant(&merchant);
+    assert!(!m.active);
+}
+
 // ── Payment tests ─────────────────────────────────────────────────────────────
 
 #[test]

@@ -3,7 +3,6 @@ use soroban_sdk::{Address, Bytes, BytesN, Env, String};
 use crate::error::PaymentError;
 use crate::storage;
 use crate::types::{PaymentFilter, PaymentRecord, PaymentStatus, StatusFilter};
-use crate::error::PaymentError;
 
 /// Require that `caller` is the contract admin.
 pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
