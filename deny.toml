@@ -1,0 +1,48 @@
+# cargo-deny configuration
+
+[graph]
+# If true, all nodes in the graph must be reachable from the root
+# crates in the workspace.
+all-features = false
+# If true, dev-dependencies are included in the graph.
+dev-dependencies = true
+
+[advisories]
+# The path to the advisory database.
+db-path = "~/.cargo/advisory-db"
+# If true, the advisory database is fetched/updated on every run.
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# The severity level at which an advisory will cause a failure.
+vulnerability = "deny"
+# Advisories for which we want to ignore.
+ignore = []
+
+[licenses]
+# The severity level at which a license violation will cause a failure.
+unlicensed = "deny"
+# The list of allowed licenses.
+allow = [
+    "MIT",
+    "Apache-2.0",
+]
+# The list of confidence levels for license matching.
+confidence-threshold = 0.8
+# The list of exceptions for specific crates.
+exceptions = []
+
+[[licenses.clarify]]
+name = "ring"
+# ring has a non-standard license, but it's widely used and acceptable in this context.
+# However, for now we stay strict with MIT/Apache-2.0 unless needed.
+
+[bans]
+multiple-versions = "warn"
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

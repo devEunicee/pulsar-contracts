@@ -174,12 +174,45 @@ stellar contract invoke \
 
 #### `set_admin`
 
-One-time initialisation. Caller becomes admin.
+One-time initialisation. Caller becomes admin. Sets contract version to `1`.
 
 ```bash
 stellar contract invoke --id $CONTRACT_ID --source-account <KEY> --network local \
   -- set_admin --admin <ADDRESS>
 ```
+
+#### `get_version`
+
+Returns the current contract version (u32).
+
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <KEY> --network local \
+  -- get_version
+```
+
+#### `upgrade`
+
+Upgrades the contract WASM in-place. Admin only. Existing storage and contract address are preserved.
+
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network local \
+  -- upgrade \
+  --admin <ADMIN_ADDRESS> \
+  --new_wasm_hash <32_BYTE_HEX>
+```
+
+**Upgrade procedure:**
+
+1. Build the new WASM: `cargo build --target wasm32-unknown-unknown --release`
+2. Upload the WASM to the network and obtain its hash:
+   ```bash
+   stellar contract upload \
+     --wasm target/wasm32-unknown-unknown/release/payment_processing_contract.wasm \
+     --source-account <ADMIN_KEY> \
+     --network testnet
+   ```
+3. Call `upgrade` with the returned hash.
+4. Verify with `get_version`.
 
 ---
 
@@ -420,6 +453,7 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
 |---|---|
 | `admin_set` | `set_admin` |
 | `merchant_registered` | `register_merchant` |
+| `merchant_deactivated` | `deactivate_merchant` |
 | `payment_processed` | `process_payment_with_signature` |
 | `refund_initiated` | `initiate_refund` |
 | `refund_approved` | `approve_refund` |
@@ -457,6 +491,26 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
 | 42 | `MultisigAlreadyExecuted` | Payment already executed |
 | 43 | `InsufficientSignatures` | Not all required signers have signed |
 | 50 | `InvalidInput` | General input validation failure |
+
+---
+
+## TTL Strategy
+
+Soroban persistent storage entries expire after a ledger TTL. Without active renewal, long-lived records (payments, merchants, refunds) would be evicted and become permanently inaccessible.
+
+**Constants** (defined in `storage.rs`):
+
+| Constant | Value | Description |
+|---|---|---|
+| `TTL_LEDGERS` | 6,307,200 | ~1 year at 5-second ledger close time |
+| `TTL_THRESHOLD` | 3,153,600 | ~6 months — refresh TTL when remaining life drops below this |
+
+**Strategy**: every `get_*` and `save_*` call on a persistent entry calls `env.storage().persistent().extend_ttl(key, TTL_THRESHOLD, TTL_LEDGERS)`. This means:
+
+- A record's TTL is reset to ~1 year on every read or write.
+- Records that are never accessed will expire after ~1 year and be evicted by the network.
+- Frequently accessed records (active merchants, recent payments) are automatically kept alive.
+- Instance storage (admin, config, stats) is managed by the Soroban host and does not require manual TTL extension.
 
 ---
 
