@@ -31,9 +31,9 @@ pub struct PaymentContract;
 impl PaymentContract {
     // ── Admin ─────────────────────────────────────────────────────────────────
 
-    /// One-time admin initialisation.
-    pub fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError> {
-        if storage::get_admin(&env).is_some() {
+    /// One-time admin initialisation with N-of-M multi-sig model.
+    pub fn set_admin(env: Env, admins: Vec<Address>, threshold: u32) -> Result<(), PaymentError> {
+        if storage::get_admin_config(&env).is_some() || storage::get_admin(&env).is_some() {
             return Err(PaymentError::AdminAlreadySet);
         }
         helper::validate_admin_address(&env, &admin)?;
@@ -99,8 +99,12 @@ impl PaymentContract {
     }
 
     /// Enable or disable admin-whitelist mode for merchant registration.
-    pub fn set_whitelist_mode(env: Env, admin: Address, enabled: bool) -> Result<(), PaymentError> {
-        helper::require_admin(&env, &admin)?;
+    pub fn set_whitelist_mode(
+        env: Env,
+        admins: Vec<Address>,
+        enabled: bool,
+    ) -> Result<(), PaymentError> {
+        helper::require_multi_admin(&env, admins)?;
         storage::set_whitelist_enabled(&env, enabled);
         Ok(())
     }
@@ -108,24 +112,25 @@ impl PaymentContract {
     /// Pre-approve a merchant address so it can register when whitelist mode is on.
     pub fn approve_merchant_registration(
         env: Env,
-        admin: Address,
+        admins: Vec<Address>,
         merchant_address: Address,
     ) -> Result<(), PaymentError> {
-        helper::require_admin(&env, &admin)?;
+        helper::require_multi_admin(&env, admins)?;
         storage::set_whitelisted(&env, &merchant_address, true);
         Ok(())
     }
 
     pub fn deactivate_merchant(
         env: Env,
-        caller: Address,
         merchant_address: Address,
+        admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
-        caller.require_auth();
-        let admin = storage::get_admin(&env).ok_or(PaymentError::Unauthorized)?;
-        if caller != admin && caller != merchant_address {
-            return Err(PaymentError::Unauthorized);
+        if let Some(admins) = admin_authorizers {
+            helper::require_multi_admin(&env, admins)?;
+        } else {
+            merchant_address.require_auth();
         }
+
         let mut merchant =
             storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)?;
         merchant.active = false;
@@ -149,6 +154,7 @@ impl PaymentContract {
         payer: Address,
         order: PaymentOrder,
         signature: BytesN<64>,
+        merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
         payer.require_auth();
 
@@ -182,8 +188,8 @@ impl PaymentContract {
 
         // Verify signature over full order serialisation as payload
         let payload = order.clone().to_xdr(&env);
-        let is_test_key = merchant_public_key == [0u8; 32];
-        if !is_test_key {
+        let test_key = BytesN::from_array(&env, &[0u8; 32]);
+        if merchant_public_key != test_key {
             helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;
         }
 
@@ -226,13 +232,17 @@ impl PaymentContract {
         order_id: Bytes,
     ) -> Result<PaymentRecord, PaymentError> {
         caller.require_auth();
-        let record =
-            storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
-        let admin = storage::get_admin(&env);
-        if caller != record.payer
-            && caller != record.merchant_address
-            && admin.as_ref() != Some(&caller)
-        {
+        let record = storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
+
+        let is_admin = if let Some(config) = storage::get_admin_config(&env) {
+            config.admins.contains(&caller)
+        } else if let Some(admin) = storage::get_admin(&env) {
+            admin == caller
+        } else {
+            false
+        };
+
+        if caller != record.payer && caller != record.merchant_address && !is_admin {
             return Err(PaymentError::Unauthorized);
         }
         Ok(record)
@@ -268,11 +278,11 @@ impl PaymentContract {
 
     pub fn get_global_payment_stats(
         env: Env,
-        admin: Address,
+        admins: Vec<Address>,
         date_start: Option<u64>,
         date_end: Option<u64>,
     ) -> Result<GlobalStats, PaymentError> {
-        helper::require_admin(&env, &admin)?;
+        helper::require_multi_admin(&env, admins)?;
 
         if date_start.is_none() && date_end.is_none() {
             return Ok(storage::get_global_stats(&env));
@@ -351,12 +361,11 @@ impl PaymentContract {
 
     pub fn archive_payment_record(
         env: Env,
-        admin: Address,
+        admins: Vec<Address>,
         order_id: Bytes,
     ) -> Result<(), PaymentError> {
-        helper::require_admin(&env, &admin)?;
-        let record =
-            storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
+        helper::require_multi_admin(&env, admins)?;
+        let record = storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
         storage::remove_payment(&env, &order_id);
         storage::remove_merchant_payment_id(&env, &record.merchant_address, &order_id);
         storage::remove_payer_payment_id(&env, &record.payer, &order_id);
@@ -364,8 +373,8 @@ impl PaymentContract {
         Ok(())
     }
 
-    pub fn cleanup_expired_payments(env: Env, admin: Address) -> Result<u32, PaymentError> {
-        helper::require_admin(&env, &admin)?;
+    pub fn cleanup_expired_payments(env: Env, admins: Vec<Address>) -> Result<u32, PaymentError> {
+        helper::require_multi_admin(&env, admins)?;
         let period = storage::get_cleanup_period(&env);
         let now = env.ledger().timestamp();
         let cutoff = now.saturating_sub(period);
@@ -394,10 +403,10 @@ impl PaymentContract {
 
     pub fn set_payment_cleanup_period(
         env: Env,
-        admin: Address,
+        admins: Vec<Address>,
         period: u64,
     ) -> Result<(), PaymentError> {
-        helper::require_admin(&env, &admin)?;
+        helper::require_multi_admin(&env, admins)?;
         if period == 0 {
             return Err(PaymentError::InvalidInput);
         }
@@ -407,10 +416,10 @@ impl PaymentContract {
 
     pub fn set_default_multisig_expiry(
         env: Env,
-        admin: Address,
+        admins: Vec<Address>,
         expiry: u64,
     ) -> Result<(), PaymentError> {
-        helper::require_admin(&env, &admin)?;
+        helper::require_multi_admin(&env, admins)?;
         if expiry < 3600 {
             return Err(PaymentError::InvalidInput);
         }
@@ -481,19 +490,26 @@ impl PaymentContract {
         env: Env,
         caller: Address,
         refund_id: Bytes,
+        admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
 
-        let record = storage::get_payment(&env, &refund.order_id)
-            .ok_or(PaymentError::PaymentNotFound)?;
-        let admin = storage::get_admin(&env);
+        let record =
+            storage::get_payment(&env, &refund.order_id).ok_or(PaymentError::PaymentNotFound)?;
 
-        // Allow admin or the merchant (merchant must be active)
-        if admin.as_ref() != Some(&caller) {
-            helper::require_merchant(&env, &caller, &record.merchant_address)?;
+        // Allow admin (multi-sig) or the merchant (merchant must be active)
+        let is_authorized = if let Some(admins) = admin_authorizers {
+            helper::require_multi_admin(&env, admins).is_ok()
+        } else {
+            helper::require_merchant(&env, &caller, &record.merchant_address).is_ok()
+        };
+
+        if !is_authorized {
+            return Err(PaymentError::Unauthorized);
         }
+
         if refund.status != RefundStatus::Pending {
             return Err(PaymentError::RefundAlreadyCompleted);
         }
@@ -511,19 +527,26 @@ impl PaymentContract {
         env: Env,
         caller: Address,
         refund_id: Bytes,
+        admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
 
-        let record = storage::get_payment(&env, &refund.order_id)
-            .ok_or(PaymentError::PaymentNotFound)?;
-        let admin = storage::get_admin(&env);
+        let record =
+            storage::get_payment(&env, &refund.order_id).ok_or(PaymentError::PaymentNotFound)?;
 
-        // Allow admin or the merchant (merchant must be active)
-        if admin.as_ref() != Some(&caller) {
-            helper::require_merchant(&env, &caller, &record.merchant_address)?;
+        // Allow admin (multi-sig) or the merchant (merchant must be active)
+        let is_authorized = if let Some(admins) = admin_authorizers {
+            helper::require_multi_admin(&env, admins).is_ok()
+        } else {
+            helper::require_merchant(&env, &caller, &record.merchant_address).is_ok()
+        };
+
+        if !is_authorized {
+            return Err(PaymentError::Unauthorized);
         }
+
         if refund.status != RefundStatus::Pending {
             return Err(PaymentError::RefundAlreadyCompleted);
         }
