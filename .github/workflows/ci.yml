@@ -40,7 +40,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run tests
-        run: cargo test --all-features
+        run: cargo test --all-features --locked
         working-directory: contracts/payment-processing-contract
 
   build:
@@ -66,7 +66,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-wasm-
 
       - name: Build WASM
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: cargo build --target wasm32-unknown-unknown --release --locked
         working-directory: contracts/payment-processing-contract
 
       - name: Upload WASM artifact
@@ -100,7 +100,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-wasm-
 
       - name: Build WASM
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: cargo build --target wasm32-unknown-unknown --release --locked
         working-directory: contracts/payment-processing-contract
 
       - name: Generate SHA-256 checksum
