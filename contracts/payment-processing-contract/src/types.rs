@@ -59,6 +59,7 @@ pub struct PaymentRecord {
     pub pending_refund_amount: i128,
     pub status: PaymentStatus,
     pub paid_at: u64,
+    pub description: String,
 }
 
 // ── Refund ────────────────────────────────────────────────────────────────────

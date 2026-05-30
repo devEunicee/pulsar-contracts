@@ -197,6 +197,7 @@ impl PaymentContract {
             pending_refund_amount: 0,
             status: PaymentStatus::Completed,
             paid_at: now,
+            description: order.description.clone(),
         };
 
         storage::save_payment(&env, &record);
@@ -718,6 +719,7 @@ impl PaymentContract {
             pending_refund_amount: 0,
             status: PaymentStatus::Completed,
             paid_at: now,
+            description: order.description.clone(),
         };
         storage::save_payment(&env, &record);
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
