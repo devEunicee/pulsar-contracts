@@ -294,6 +294,8 @@ pub const DEFAULT_CLEANUP_PERIOD: u64 = 7_776_000;
 pub const REFUND_WINDOW: u64 = 2_592_000;
 /// Default multisig expiry: 24 hours in seconds
 pub const DEFAULT_MULTISIG_EXPIRY: u64 = 86_400;
+/// Maximum number of signers for a multisig payment
+pub const MAX_SIGNERS: u32 = 10;
 
 pub fn get_cleanup_period(env: &Env) -> u64 {
     env.storage()

@@ -610,7 +610,7 @@ impl PaymentContract {
         if storage::get_multisig(&env, &payment_id).is_some() {
             return Err(PaymentError::PaymentAlreadyExists);
         }
-        if required_signers.is_empty() {
+        if required_signers.is_empty() || required_signers.len() > storage::MAX_SIGNERS {
             return Err(PaymentError::InvalidInput);
         }
 
