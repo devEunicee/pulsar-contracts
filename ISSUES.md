@@ -6,14 +6,14 @@
 
 ---
 
-### SC-001 · Signature payload covers only order_id, not full order
+### SC-001 · Signature payload covers only order_id, not full order [COMPLETED]
 
 **Description:** `process_payment_with_signature` builds the ed25519 payload from `order.order_id` bytes only. An attacker can reuse a valid signature from one order on a different order that shares the same `order_id` prefix, or craft a collision. The payload must commit to the entire order struct.
 
 **Acceptance Criteria:**
-- Payload is the canonical serialisation of the full `PaymentOrder` (all fields)
-- Existing tests updated to reflect the new payload
-- A test proves that a signature over a different amount is rejected
+- [x] Payload is the canonical serialisation of the full `PaymentOrder` (all fields)
+- [x] Existing tests updated to reflect the new payload
+- [x] A test proves that a signature over a different amount is rejected
 
 **Priority:** Critical
 **Effort:** Small
@@ -190,14 +190,14 @@
 
 ---
 
-### SC-013 · Merchant payment ID list grows unboundedly in persistent storage
+### SC-013 · Merchant payment ID list grows unboundedly in persistent storage [COMPLETED]
 
-**Description:** `push_merchant_payment_id` appends to a `Vec<String>` stored under a single persistent key. Loading and re-saving this vector on every payment is O(n) in storage reads/writes and will eventually exceed ledger entry size limits.
+**Description:** `push_merchant_payment_id` appends to a `Vec` stored under a single persistent key. Loading and re-saving this vector on every payment is O(n) in storage reads/writes and will eventually exceed ledger entry size limits.
 
 **Acceptance Criteria:**
-- Replace with a linked-list or chunked index structure, OR
-- Cap the in-contract index at a configurable maximum and document the trade-off
-- Benchmark storage cost at 1 000, 10 000, and 100 000 entries
+- [x] Replace with a linked-list or chunked index structure, OR
+- [x] Cap the in-contract index at a configurable maximum and document the trade-off
+- [x] Benchmark storage cost at 1 000, 10 000, and 100 000 entries
 
 **Priority:** High
 **Effort:** Large

@@ -62,8 +62,8 @@ fn test_approve_refund_unauthorized_fails() {
     let stranger = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
-    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail);
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail, &None);
     mint(&env, &token, &admin, &payer, 1000);
 
     let order = make_order(&env, &merchant, &payer, &token);
@@ -71,7 +71,7 @@ fn test_approve_refund_unauthorized_fails() {
 
     client.initiate_refund(&payer, &bytes(&env, "R1"), &order.order_id, &100, &str(&env, "reason"));
 
-    let result = client.try_approve_refund(&stranger, &bytes(&env, "R1"));
+    let result = client.try_approve_refund(&stranger, &bytes(&env, "R1"), &None);
     assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
 }
 
@@ -83,13 +83,14 @@ fn test_initiate_multisig_duplicate_signer_fails() {
     let signer1 = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
+    client.set_admin(&vec![&env, admin.clone()], &1);
     client.register_merchant(
         &merchant,
         &str(&env, "Store"),
         &str(&env, "desc"),
         &str(&env, "c@c.com"),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &signer1, 5000);
 
@@ -119,8 +120,8 @@ fn test_pagination_cursor_inverted() {
     let payer = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
-    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail);
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail, &None);
     mint(&env, &token, &admin, &payer, 10000);
 
     // Create 5 payments with increasing amounts
@@ -132,19 +133,38 @@ fn test_pagination_cursor_inverted() {
     }
 
     // Page 1: limit 2, sorted by Amount Descending
-    // Order in storage: 1, 2, 3, 4, 5
-    // Sorted order: 5, 4, 3, 2, 1
     let page1_desc = client.get_merchant_payment_history(&merchant, &None, &2, &None, &SortField::Amount, &SortOrder::Descending);
     assert_eq!(page1_desc.records.len(), 2);
     assert_eq!(page1_desc.records.get(0).unwrap().amount, 500);
     assert_eq!(page1_desc.records.get(1).unwrap().amount, 400);
-    let cursor_desc = page1_desc.next_cursor; // ORDER_004
+    let cursor_desc = page1_desc.next_cursor;
 
-    // Page 2: limit 2, sorted by Amount Descending, cursor ORDER_004
+    // Page 2: limit 2, sorted by Amount Descending, cursor
     let page2_desc = client.get_merchant_payment_history(&merchant, &cursor_desc, &2, &None, &SortField::Amount, &SortOrder::Descending);
     
-    // We expect 300 and 200
     assert_eq!(page2_desc.records.len(), 2);
     assert_eq!(page2_desc.records.get(0).unwrap().amount, 300);
     assert_eq!(page2_desc.records.get(1).unwrap().amount, 200);
+}
+
+#[test]
+fn test_initiate_multisig_max_signers_exceeded() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail);
+    mint(&env, &token, &admin, &payer, 1000);
+
+    let mut signers = Vec::new(&env);
+    for _ in 0..11 {
+        signers.push_back(Address::generate(&env));
+    }
+
+    let order = make_order(&env, &merchant, &payer, &token);
+    let result = client.try_initiate_multisig_payment(&payer, &bytes(&env, "MS_MAX"), &order, &signers);
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
 }
