@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "contracts/payment-processing-contract",
 ]
+rust-version = "1.79.0"
 
 [profile.release]
 opt-level = "z"
