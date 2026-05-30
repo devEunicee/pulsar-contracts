@@ -56,6 +56,7 @@ pub struct PaymentRecord {
     pub token: Address,
     pub amount: i128,
     pub refunded_amount: i128,
+    pub pending_refund_amount: i128,
     pub status: PaymentStatus,
     pub paid_at: u64,
 }
