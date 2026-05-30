@@ -453,6 +453,7 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
 |---|---|
 | `admin_set` | `set_admin` |
 | `merchant_registered` | `register_merchant` |
+| `merchant_deactivated` | `deactivate_merchant` |
 | `payment_processed` | `process_payment_with_signature` |
 | `refund_initiated` | `initiate_refund` |
 | `refund_approved` | `approve_refund` |
