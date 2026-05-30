@@ -85,6 +85,8 @@ pub fn remove_payment(env: &Env, order_id: &Bytes) {
 
 // ── Payment index lists ───────────────────────────────────────────────────────
 
+const CHUNK_SIZE: u32 = 100;
+
 pub fn get_merchant_payment_ids(env: &Env, merchant: &Address) -> Vec<Bytes> {
     let key = DataKey::MerchantPayments(merchant.clone());
     let result: Option<Vec<Bytes>> = env.storage().persistent().get(&key);

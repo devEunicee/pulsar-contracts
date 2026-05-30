@@ -25,7 +25,7 @@ fn sign_order(env: &Env, order: &PaymentOrder) -> (BytesN<32>, BytesN<64>) {
     let signing_key = SigningKey::from_bytes(&[1u8; 32]);
     let public_key = signing_key.verifying_key();
 
-    let payload = order.clone().to_xdr(env);
+    let payload = order.order_id.clone();
     let mut payload_bytes = vec![0u8; payload.len() as usize];
     payload.copy_into_slice(&mut payload_bytes);
 
@@ -675,6 +675,45 @@ fn test_get_merchant_payment_history() {
     );
     assert_eq!(page.total, 3);
     assert_eq!(page.records.get(0).unwrap().amount, 300);
+}
+
+#[test]
+fn test_large_payment_index_growth() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &payer, 1000000);
+
+    // Push 250 payments (3 chunks of 100/100/50)
+    for i in 0..250 {
+        let order = PaymentOrder {
+            order_id: bytes(&env, &alloc::format!("ORDER_{:04}", i)),
+            merchant_address: merchant.clone(),
+            payer: payer.clone(),
+            token: token.clone(),
+            amount: 1,
+            description: str(&env, "Test"),
+            expires_at: 0,
+        };
+        let pub_key = BytesN::from_array(&env, &[0u8; 32]);
+        let sig = BytesN::from_array(&env, &[0u8; 64]);
+        client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    }
+
+    let history = client.get_merchant_payment_history(&merchant, &None, &10, &None, &SortField::Date, &SortOrder::Ascending);
+    assert_eq!(history.total, 250);
+    assert_eq!(history.records.len(), 10);
 }
 
 #[test]
