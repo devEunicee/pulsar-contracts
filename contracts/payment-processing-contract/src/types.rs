@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Bytes, String, Vec};
+use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Vec};
 
 // ── Merchant ──────────────────────────────────────────────────────────────────
 
@@ -56,8 +56,10 @@ pub struct PaymentRecord {
     pub token: Address,
     pub amount: i128,
     pub refunded_amount: i128,
+    pub pending_refund_amount: i128,
     pub status: PaymentStatus,
     pub paid_at: u64,
+    pub description: String,
 }
 
 // ── Refund ────────────────────────────────────────────────────────────────────
@@ -152,21 +154,34 @@ pub struct GlobalStats {
     pub total_refund_volume: i128,
 }
 
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminConfig {
+    pub admins: Vec<Address>,
+    pub threshold: u32,
+}
+
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
+    ContractVersion,
     Merchant(Address),
     Payment(Bytes),
-    MerchantPayments(Address),
-    PayerPayments(Address),
+    MerchantPaymentChunk(Address, u32),
+    MerchantPaymentCount(Address),
+    PayerPaymentChunk(Address, u32),
+    PayerPaymentCount(Address),
     Refund(Bytes),
     Multisig(Bytes),
     CleanupPeriod,
     DefaultMultisigExpiry,
-    GlobalPaymentIndex,
+    GlobalPaymentChunk(u32),
+    GlobalPaymentCount,
     GlobalStats,
     AllPayments,
     AllRefunds,
