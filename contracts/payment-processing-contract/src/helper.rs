@@ -3,7 +3,6 @@ use soroban_sdk::{Address, Bytes, BytesN, Env, String};
 use crate::error::PaymentError;
 use crate::storage;
 use crate::types::{PaymentFilter, PaymentRecord, PaymentStatus, StatusFilter};
-use crate::error::PaymentError;
 
 /// Require that `caller` is the contract admin.
 pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
@@ -11,6 +10,19 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
     let admin = storage::get_admin(env).ok_or(PaymentError::Unauthorized)?;
     if admin != *caller {
         return Err(PaymentError::Unauthorized);
+    }
+    Ok(())
+}
+
+/// Validate that `admin` is not the zero/burn address.
+pub fn validate_admin_address(env: &Env, admin: &Address) -> Result<(), PaymentError> {
+    // The Soroban SDK does not expose a dedicated zero/burn address validation API
+    // for `Address`. This is a best-effort guard against a zero-address
+    // representation when the SDK serialization exposes it.
+    let admin_xdr = admin.clone().to_xdr(env);
+    let all_zero = admin_xdr.iter().all(|&b| b == 0);
+    if all_zero {
+        return Err(PaymentError::InvalidInput);
     }
     Ok(())
 }

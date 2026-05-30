@@ -22,6 +22,7 @@ pub struct Merchant {
     pub category: MerchantCategory,
     pub active: bool,
     pub registered_at: u64,
+    pub signing_public_key: Option<BytesN<32>>,
 }
 
 // ── Payment ───────────────────────────────────────────────────────────────────
@@ -157,6 +158,7 @@ pub struct GlobalStats {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
+    ContractVersion,
     Merchant(Address),
     Payment(Bytes),
     MerchantPayments(Address),
@@ -169,4 +171,6 @@ pub enum DataKey {
     GlobalStats,
     AllPayments,
     AllRefunds,
+    WhitelistEnabled,
+    Whitelist(Address),
 }

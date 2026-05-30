@@ -130,43 +130,11 @@ jobs:
       - name: Run audit
         run: cargo audit
 
-  deploy-testnet:
-    name: Deploy to Testnet
+  deny:
+    name: Cargo Deny
     runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download WASM artifact
-        uses: actions/download-artifact@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          name: payment-processing-contract.wasm
-          path: wasm
-
-      - name: Install Stellar CLI
-        run: |
-          curl -sSL https://github.com/stellar/stellar-cli/releases/download/v22.0.1/stellar-cli-22.0.1-x86_64-unknown-linux-gnu.tar.gz \
-            | tar -xz -C /usr/local/bin stellar
-
-      - name: Deploy contract to testnet
-        id: deploy
-        env:
-          TESTNET_SECRET_KEY: ${{ secrets.TESTNET_SECRET_KEY }}
-        run: |
-          CONTRACT_ID=$(stellar contract deploy \
-            --wasm wasm/payment_processing_contract.wasm \
-            --source-account "$TESTNET_SECRET_KEY" \
-            --network testnet)
-          echo "contract_id=$CONTRACT_ID" >> "$GITHUB_OUTPUT"
-          echo "Deployed contract ID: $CONTRACT_ID"
-
-      - name: Save contract ID as artifact
-        run: echo "${{ steps.deploy.outputs.contract_id }}" > contract_id.txt
-
-      - name: Upload contract ID artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: testnet-contract-id
-          path: contract_id.txt
-          retention-days: 90
+          command: check
