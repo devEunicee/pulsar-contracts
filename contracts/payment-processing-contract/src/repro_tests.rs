@@ -148,3 +148,26 @@ fn test_pagination_cursor_inverted() {
     assert_eq!(page2_desc.records.get(0).unwrap().amount, 300);
     assert_eq!(page2_desc.records.get(1).unwrap().amount, 200);
 }
+
+#[test]
+fn test_initiate_multisig_merchant_inactive() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail);
+    
+    // Deactivate merchant
+    client.deactivate_merchant(&admin, &merchant);
+
+    mint(&env, &token, &admin, &payer, 1000);
+    let order = make_order(&env, &merchant, &payer, &token);
+    let mut signers = Vec::new(&env);
+    signers.push_back(payer.clone());
+    
+    let result = client.try_initiate_multisig_payment(&payer, &bytes(&env, "MS_INACTIVE"), &order, &signers);
+    assert_eq!(result, Err(Ok(PaymentError::MerchantInactive)));
+}

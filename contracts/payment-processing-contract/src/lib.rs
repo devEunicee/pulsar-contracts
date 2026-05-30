@@ -571,6 +571,13 @@ impl PaymentContract {
             return Err(PaymentError::InvalidInput);
         }
 
+        // Verify merchant is active
+        let merchant = storage::get_merchant(&env, &order.merchant_address)
+            .ok_or(PaymentError::MerchantNotFound)?;
+        if !merchant.active {
+            return Err(PaymentError::MerchantInactive);
+        }
+
         // Ensure no duplicate signers
         let mut unique_signers = Vec::new(&env);
         for signer in required_signers.iter() {
