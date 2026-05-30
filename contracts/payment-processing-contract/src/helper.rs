@@ -14,6 +14,19 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
     Ok(())
 }
 
+/// Validate that `admin` is not the zero/burn address.
+pub fn validate_admin_address(env: &Env, admin: &Address) -> Result<(), PaymentError> {
+    // The Soroban SDK does not expose a dedicated zero/burn address validation API
+    // for `Address`. This is a best-effort guard against a zero-address
+    // representation when the SDK serialization exposes it.
+    let admin_xdr = admin.clone().to_xdr(env);
+    let all_zero = admin_xdr.iter().all(|&b| b == 0);
+    if all_zero {
+        return Err(PaymentError::InvalidInput);
+    }
+    Ok(())
+}
+
 /// Require that `caller` is the registered merchant at `merchant_address`.
 pub fn require_merchant(
     env: &Env,
@@ -39,6 +52,38 @@ pub fn validate_amount(amount: i128) -> Result<(), PaymentError> {
     Ok(())
 }
 
+/// Validate merchant string fields: name, description, contact_info
+pub fn validate_merchant_fields(
+    name: &String,
+    description: &String,
+    contact_info: &String,
+) -> Result<(), PaymentError> {
+    // name <= 64 bytes
+    let name_bytes = name.to_string().as_bytes();
+    if name_bytes.len() > 64 {
+        return Err(PaymentError::InvalidInput);
+    }
+
+    // description <= 256 bytes
+    let desc_bytes = description.to_string().as_bytes();
+    if desc_bytes.len() > 256 {
+        return Err(PaymentError::InvalidInput);
+    }
+
+    // contact_info <= 128 bytes and printable ASCII only
+    let contact_bytes = contact_info.to_string().as_bytes();
+    if contact_bytes.len() > 128 {
+        return Err(PaymentError::InvalidInput);
+    }
+    for &b in contact_bytes.iter() {
+        if b < 0x20 || b > 0x7E {
+            return Err(PaymentError::InvalidInput);
+        }
+    }
+
+    Ok(())
+}
+
 /// Validate that `order_id` is non-empty.
 pub fn validate_order_id(order_id: &Bytes) -> Result<(), PaymentError> {
     // Enforce non-empty, max 64 bytes
@@ -46,6 +91,7 @@ pub fn validate_order_id(order_id: &Bytes) -> Result<(), PaymentError> {
     if len == 0 || len > 64 {
         return Err(PaymentError::InvalidInput);
     }
+    // character check is omitted for Bytes as it's harder in no_std without String
     Ok(())
 }
 

@@ -6,14 +6,14 @@
 
 ---
 
-### SC-001 · Signature payload covers only order_id, not full order
+### SC-001 · Signature payload covers only order_id, not full order [COMPLETED]
 
 **Description:** `process_payment_with_signature` builds the ed25519 payload from `order.order_id` bytes only. An attacker can reuse a valid signature from one order on a different order that shares the same `order_id` prefix, or craft a collision. The payload must commit to the entire order struct.
 
 **Acceptance Criteria:**
-- Payload is the canonical serialisation of the full `PaymentOrder` (all fields)
-- Existing tests updated to reflect the new payload
-- A test proves that a signature over a different amount is rejected
+- [x] Payload is the canonical serialisation of the full `PaymentOrder` (all fields)
+- [x] Existing tests updated to reflect the new payload
+- [x] A test proves that a signature over a different amount is rejected
 
 **Priority:** Critical
 **Effort:** Small
@@ -572,13 +572,13 @@
 
 ---
 
-### T-008 · No test for multisig with duplicate signer in `required_signers`
+### T-008 · No test for multisig with duplicate signer in `required_signers` [COMPLETED]
 
 **Description:** If the same address appears twice in `required_signers`, they can sign twice and satisfy the threshold alone.
 
 **Acceptance Criteria:**
-- Test: duplicate signer in `required_signers` → `InvalidInput` (after fix)
-- Deduplication logic added to `initiate_multisig_payment`
+- [x] Test: duplicate signer in `required_signers` → `InvalidInput` (after fix)
+- [x] Deduplication logic added to `initiate_multisig_payment`
 
 **Priority:** High
 **Effort:** Small

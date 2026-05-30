@@ -35,6 +35,16 @@ cargo build --target wasm32-unknown-unknown --release
 - **No unsafe**: do not use `unsafe` blocks.
 - **No std**: the contract crate is `#![no_std]`; keep it that way.
 
+## Branch Protection Rules
+
+The `main` branch is protected with the following enforced settings:
+
+- **Required reviews**: at least 1 approving review before merging.
+- **Required status checks**: all CI jobs (`test`, `build`, `security-audit`) must pass.
+- **No direct pushes**: commits must be submitted via a pull request; force-pushes are disabled.
+
+These rules are enforced via GitHub branch protection settings. Contributors cannot bypass them.
+
 ## Pull Request Guidelines
 
 - Keep PRs focused — one feature or fix per PR.
