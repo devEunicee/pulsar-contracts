@@ -601,6 +601,24 @@ fn test_refund_reason_length_limit() {
 }
 
 #[test]
+fn test_approve_refund_unauthorized_fails() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+    let stranger = Address::generate(&env);
+
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_001"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "Customer request"),
+    );
+
+    let result = client.try_approve_refund(&stranger, &bytes(&env, "REFUND_001"));
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
 fn test_refund_exceeds_payment_fails() {
     let (env, client) = setup();
     let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
@@ -1218,6 +1236,8 @@ fn test_multisig_payment_expiry() {
         &MerchantCategory::Retail,
         &None,
     );
+    mint(&env, &token, &admin, &signer1, 5000);
+
     mint(&env, &token, &admin, &signer1, 5000);
 
     let order = make_order(&env, &merchant, &signer1, &token);
