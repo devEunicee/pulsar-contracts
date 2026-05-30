@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Bytes, String, Vec};
+use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Vec};
 
 // ── Merchant ──────────────────────────────────────────────────────────────────
 
@@ -152,12 +152,22 @@ pub struct GlobalStats {
     pub total_refund_volume: i128,
 }
 
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminConfig {
+    pub admins: Vec<Address>,
+    pub threshold: u32,
+}
+
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
+    AdminConfig,
     Merchant(Address),
     Payment(Bytes),
     MerchantPayments(Address),

@@ -1,7 +1,9 @@
 use soroban_sdk::{Address, Bytes, Env, Vec};
 
 use crate::error::PaymentError;
-use crate::types::{DataKey, GlobalStats, Merchant, MultisigPayment, PaymentRecord, RefundRecord};
+use crate::types::{
+    AdminConfig, DataKey, GlobalStats, Merchant, MultisigPayment, PaymentRecord, RefundRecord,
+};
 
 // ── TTL constants ─────────────────────────────────────────────────────────────
 
@@ -18,6 +20,14 @@ pub fn get_admin(env: &Env) -> Option<Address> {
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
+}
+
+pub fn get_admin_config(env: &Env) -> Option<AdminConfig> {
+    env.storage().instance().get(&DataKey::AdminConfig)
+}
+
+pub fn set_admin_config(env: &Env, config: &AdminConfig) {
+    env.storage().instance().set(&DataKey::AdminConfig, config);
 }
 
 // ── Merchant ──────────────────────────────────────────────────────────────────
