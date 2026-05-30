@@ -1018,6 +1018,51 @@ fn test_get_global_stats_with_filtering() {
 }
 
 #[test]
+fn test_get_global_payment_stats_date_filters_all_and_none() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "contact@store.com"),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let order1 = make_order(&env, &merchant, &payer, &token);
+    let (pk1, sig1) = sign_order(&env, &order1);
+    client.process_payment_with_signature(&payer, &order1, &sig1, &pk1);
+
+    env.ledger().with_mut(|l| l.timestamp = 2000);
+    let order2 = PaymentOrder {
+        order_id: bytes(&env, "ORDER_002"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 2000,
+        description: str(&env, "Test order 2"),
+        expires_at: 0,
+    };
+    let (pk2, sig2) = sign_order(&env, &order2);
+    client.process_payment_with_signature(&payer, &order2, &sig2, &pk2);
+
+    let stats = client.get_global_payment_stats(&admin, &Some(500), &Some(2500));
+    assert_eq!(stats.total_payments, 2);
+    assert_eq!(stats.total_volume, 3000);
+
+    let stats = client.get_global_payment_stats(&admin, &Some(2501), &Some(3500));
+    assert_eq!(stats.total_payments, 0);
+    assert_eq!(stats.total_volume, 0);
+}
+
+#[test]
 fn test_update_payment_status_emits_event() {
     let (env, client) = setup();
     let (_admin, merchant, _payer, _token) = setup_paid_order(&env, &client);
