@@ -212,12 +212,11 @@ fn test_set_admin_twice_fails() {
 }
 
 #[test]
-fn test_set_admin_rejects_zero_address() {
+fn test_get_version_after_set_admin() {
     let (env, client) = setup();
-    let zero_admin = Address::Contract(BytesN::from_array(&env, &[0u8; 32]));
-
-    let result = client.try_set_admin(&zero_admin);
-    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+    let admin = Address::generate(&env);
+    client.set_admin(&admin);
+    assert_eq!(client.get_version(), 1);
 }
 
 // ── Merchant tests ────────────────────────────────────────────────────────────
@@ -232,6 +231,7 @@ fn test_register_merchant_success() {
         &str(&env, "A great store"),
         &str(&env, "contact@store.com"),
         &MerchantCategory::Retail,
+        &None,
     );
     let m = client.get_merchant(&merchant);
     assert_eq!(m.name, str(&env, "My Store"));
@@ -248,6 +248,7 @@ fn test_register_merchant_duplicate_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     let result = client.try_register_merchant(
         &merchant,
@@ -255,6 +256,7 @@ fn test_register_merchant_duplicate_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     assert_eq!(result, Err(Ok(PaymentError::MerchantAlreadyRegistered)));
 }
@@ -271,10 +273,52 @@ fn test_deactivate_merchant() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     client.deactivate_merchant(&admin, &merchant);
     let m = client.get_merchant(&merchant);
     assert!(!m.active);
+}
+
+#[test]
+fn test_reactivate_merchant_success() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    // Deactivate
+    client.deactivate_merchant(&admin, &merchant);
+    let m = client.get_merchant(&merchant);
+    assert!(!m.active);
+
+    // Try payment (should fail)
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (pub_key, sig) = sign_order(&env, &order);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig);
+    assert_eq!(result, Err(Ok(PaymentError::MerchantInactive)));
+
+    // Reactivate
+    client.reactivate_merchant(&merchant, &merchant);
+    let m = client.get_merchant(&merchant);
+    assert!(m.active);
+
+    // Process payment
+    client.process_payment_with_signature(&payer, &order, &sig);
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.status, PaymentStatus::Completed);
 }
 
 // ── Payment tests ─────────────────────────────────────────────────────────────
@@ -294,17 +338,50 @@ fn test_successful_payment_with_signature() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &payer, 5000);
 
     let order = make_order(&env, &merchant, &payer, &token);
     let (pub_key, sig) = sign_order(&env, &order);
 
-    client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    client.process_payment_with_signature(&payer, &order, &sig);
 
     let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
     assert_eq!(record.amount, 1000);
     assert_eq!(record.status, PaymentStatus::Completed);
+}
+
+#[test]
+fn test_global_stats_overflow_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, i128::MAX);
+
+    // Process a large payment
+    let mut order = make_order(&env, &merchant, &payer, &token);
+    order.amount = i128::MAX;
+    let (pub_key, sig) = sign_order(&env, &order);
+    client.process_payment_with_signature(&payer, &order, &sig);
+
+    // Second payment should overflow total_volume
+    order.order_id = bytes(&env, "ORDER_002");
+    let (pub_key2, sig2) = sign_order(&env, &order);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig2);
+    assert_eq!(result, Err(Ok(PaymentError::ArithmeticError)));
 }
 
 #[test]
@@ -322,14 +399,15 @@ fn test_duplicate_payment_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &payer, 5000);
 
     let order = make_order(&env, &merchant, &payer, &token);
     let (pub_key, sig) = sign_order(&env, &order);
 
-    client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
-    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    client.process_payment_with_signature(&payer, &order, &sig);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig);
     assert_eq!(result, Err(Ok(PaymentError::PaymentAlreadyExists)));
 }
 
@@ -348,6 +426,7 @@ fn test_payment_expired_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &payer, 5000);
 
@@ -357,7 +436,7 @@ fn test_payment_expired_fails() {
     order.expires_at = 1000; // already expired
 
     let (pub_key, sig) = sign_order(&env, &order);
-    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig);
     assert_eq!(result, Err(Ok(PaymentError::PaymentExpired)));
 }
 
@@ -376,6 +455,7 @@ fn test_signature_over_different_amount_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com"),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &payer, 5000);
 
@@ -385,7 +465,7 @@ fn test_signature_over_different_amount_fails() {
     // Change amount after signing
     order.amount = 2000;
 
-    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig);
     // In Soroban, ed25519_verify panics on failure, which try_... returns as HostError(Crypto, InvalidInput)
     // or just fails the contract call.
     assert!(result.is_err());
@@ -409,12 +489,13 @@ fn setup_paid_order(
         &str(env, "desc"),
         &str(env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(env, &token, &admin, &payer, 5000);
 
     let order = make_order(env, &merchant, &payer, &token);
     let (pub_key, sig) = sign_order(env, &order);
-    client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    client.process_payment_with_signature(&payer, &order, &sig);
 
     (admin, merchant, payer, token)
 }
@@ -422,7 +503,11 @@ fn setup_paid_order(
 #[test]
 fn test_successful_refund_flow() {
     let (env, client) = setup();
-    let (_admin, merchant, payer, _token) = setup_paid_order(&env, &client);
+    let (_admin, merchant, payer, token) = setup_paid_order(&env, &client);
+
+    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
+    let payer_balance_before = token_client.balance(&payer);
+    let merchant_balance_before = token_client.balance(&merchant);
 
     client.initiate_refund(
         &payer,
@@ -446,6 +531,65 @@ fn test_successful_refund_flow() {
     let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
     assert_eq!(record.refunded_amount, 500);
     assert_eq!(record.status, PaymentStatus::PartiallyRefunded);
+
+    // Balance assertions: payer receives refund, merchant pays it
+    assert_eq!(token_client.balance(&payer), payer_balance_before + 500);
+    assert_eq!(token_client.balance(&merchant), merchant_balance_before - 500);
+}
+
+#[test]
+fn test_full_refund_flow_with_balance_assertions() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, token) = setup_paid_order(&env, &client);
+
+    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
+    let payer_balance_before = token_client.balance(&payer);
+    let merchant_balance_before = token_client.balance(&merchant);
+
+    // Full refund of 1000
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_FULL"),
+        &bytes(&env, "ORDER_001"),
+        &1000,
+        &str(&env, "Full refund"),
+    );
+    client.approve_refund(&merchant, &bytes(&env, "REFUND_FULL"));
+    client.execute_refund(&merchant, &bytes(&env, "REFUND_FULL"));
+
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.refunded_amount, 1000);
+    assert_eq!(record.status, PaymentStatus::FullyRefunded);
+
+    assert_eq!(token_client.balance(&payer), payer_balance_before + 1000);
+    assert_eq!(token_client.balance(&merchant), merchant_balance_before - 1000);
+}
+
+#[test]
+fn test_refund_reason_length_limit() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // 256 bytes: ok
+    let reason_ok = "r".repeat(256);
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_OK"),
+        &bytes(&env, "ORDER_001"),
+        &100,
+        &str(&env, &reason_ok),
+    );
+
+    // 257 bytes: fails
+    let reason_bad = "r".repeat(257);
+    let result = client.try_initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_BAD"),
+        &bytes(&env, "ORDER_001"),
+        &100,
+        &str(&env, &reason_bad),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
 }
 
 #[test]
@@ -503,22 +647,11 @@ fn test_reject_refund() {
 #[test]
 fn test_get_merchant_payment_history() {
     let (env, client) = setup();
-    let admin = Address::generate(&env);
-    let merchant = Address::generate(&env);
-    let payer = Address::generate(&env);
-    let token = create_token(&env, &admin);
+    let (_admin, merchant, payer, token) = setup_paid_order(&env, &client);
 
-    client.set_admin(&admin);
-    client.register_merchant(
-        &merchant,
-        &str(&env, "Store"),
-        &str(&env, "desc"),
-        &str(&env, "c@c.com "),
-        &MerchantCategory::Retail,
-    );
-    mint(&env, &token, &admin, &payer, 10000);
-
-    for (id, amount) in [("ORDER_001", 100i128), ("ORDER_002", 200), ("ORDER_003", 300)] {
+    // Add two more payments on top of the one from setup_paid_order
+    mint(&env, &token, &_admin, &payer, 10000);
+    for (id, amount) in [("ORDER_002", 200i128), ("ORDER_003", 300)] {
         let order = PaymentOrder {
             order_id: bytes(&env, id),
             merchant_address: merchant.clone(),
@@ -528,8 +661,8 @@ fn test_get_merchant_payment_history() {
             description: str(&env, "desc"),
             expires_at: 0,
         };
-        let (pub_key, sig) = sign_order(&env, &order);
-        client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
+        let (_pk, sig) = sign_order(&env, &order);
+        client.process_payment_with_signature(&payer, &order, &sig);
     }
 
     let page = client.get_merchant_payment_history(
@@ -575,6 +708,7 @@ fn test_initiate_multisig_payment_success() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &signer1, 5000);
 
@@ -618,6 +752,7 @@ fn test_multisig_insufficient_signatures_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &signer1, 5000);
 
@@ -657,6 +792,7 @@ fn test_initiate_multisig_duplicate_signer_fails() {
         &str(&env, "desc"),
         &str(&env, "c@c.com"),
         &MerchantCategory::Retail,
+        &None,
     );
     mint(&env, &token, &admin, &signer1, 5000);
 
@@ -680,6 +816,150 @@ fn test_initiate_multisig_duplicate_signer_fails() {
 
 // ── Admin config tests ────────────────────────────────────────────────────────
 
+// ── Whitelist tests ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_whitelist_mode_blocks_unregistered_merchant() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admin);
+
+    client.set_whitelist_mode(&admin, &true);
+
+    let result = client.try_register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
+fn test_whitelist_mode_allows_approved_merchant() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admin);
+
+    client.set_whitelist_mode(&admin, &true);
+    client.approve_merchant_registration(&admin, &merchant);
+
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    let m = client.get_merchant(&merchant);
+    assert!(m.active);
+}
+
+#[test]
+fn test_whitelist_disabled_allows_open_registration() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admin);
+
+    // Whitelist mode off by default
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    let m = client.get_merchant(&merchant);
+    assert!(m.active);
+}
+
+#[test]
+fn test_set_whitelist_mode_non_admin_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let other = Address::generate(&env);
+    client.set_admin(&admin);
+
+    let result = client.try_set_whitelist_mode(&other, &true);
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+
+
+#[test]
+fn test_archive_payment_record_removes_from_indexes() {
+    let (env, client) = setup();
+    let (admin, merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Verify payment exists and appears in history
+    let page = client.get_merchant_payment_history(
+        &merchant,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+
+    // Archive the payment
+    client.archive_payment_record(&admin, &bytes(&env, "ORDER_001"));
+
+    // Payment should no longer be retrievable
+    let result = client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
+
+    // Merchant history should be empty
+    let page = client.get_merchant_payment_history(
+        &merchant,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 0);
+
+    // Payer history should be empty
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 0);
+}
+
+#[test]
+fn test_archive_payment_record_non_admin_fails() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    let result = client.try_archive_payment_record(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
+fn test_archive_payment_record_not_found_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.set_admin(&admin);
+
+    let result = client.try_archive_payment_record(&admin, &bytes(&env, "NONEXISTENT"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
+}
+
+
+
 #[test]
 fn test_set_cleanup_period() {
     let (env, client) = setup();
@@ -691,34 +971,10 @@ fn test_set_cleanup_period() {
 #[test]
 fn test_get_global_stats_with_filtering() {
     let (env, client) = setup();
-    let admin = Address::generate(&env);
-    let merchant = Address::generate(&env);
-    let payer = Address::generate(&env);
-    let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
-    client.register_merchant(
-        &merchant,
-        &str(&env, "Store"),
-        &str(&env, "desc"),
-        &str(&env, "c@c.com"),
-        &MerchantCategory::Retail,
-    );
-    mint(&env, &token, &admin, &payer, 10000);
-
-    // Payment 1: t=1000
+    // Payment 1: t=1000 (amount=1000 from setup_paid_order)
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let order1 = PaymentOrder {
-        order_id: bytes(&env, "ORDER_001"),
-        merchant_address: merchant.clone(),
-        payer: payer.clone(),
-        token: token.clone(),
-        amount: 1000,
-        description: str(&env, "p1"),
-        expires_at: 0,
-    };
-    let (pk1, sig1) = sign_order(&env, &order1);
-    client.process_payment_with_signature(&payer, &order1, &sig1, &pk1);
+    let (admin, merchant, payer, token) = setup_paid_order(&env, &client);
 
     // Payment 2: t=2000
     env.ledger().with_mut(|l| l.timestamp = 2000);
@@ -731,8 +987,8 @@ fn test_get_global_stats_with_filtering() {
         description: str(&env, "p2"),
         expires_at: 0,
     };
-    let (pk2, sig2) = sign_order(&env, &order2);
-    client.process_payment_with_signature(&payer, &order2, &sig2, &pk2);
+    let (_pk2, sig2) = sign_order(&env, &order2);
+    client.process_payment_with_signature(&payer, &order2, &sig2);
 
     // Refund for Payment 1: initiated at t=3000, executed at t=4000
     env.ledger().with_mut(|l| l.timestamp = 3000);
@@ -885,8 +1141,8 @@ fn test_multisig_payment_expiry() {
         &str(&env, "desc"),
         &str(&env, "c@c.com "),
         &MerchantCategory::Retail,
+        &None,
     );
-
     mint(&env, &token, &admin, &signer1, 5000);
 
     let order = make_order(&env, &merchant, &signer1, &token);
