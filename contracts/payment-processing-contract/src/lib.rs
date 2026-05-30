@@ -38,9 +38,22 @@ impl PaymentContract {
         }
         admin.require_auth();
         storage::set_admin(&env, &admin);
+        storage::set_contract_version(&env, 1);
         env.events()
             .publish((DataKey::Admin,), (String::from_str(&env, "admin_set"), admin));
         Ok(())
+    }
+
+    /// Upgrade the contract WASM. Admin only.
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        Ok(())
+    }
+
+    /// Return the stored contract version.
+    pub fn get_version(env: Env) -> u32 {
+        storage::get_contract_version(&env)
     }
 
     // ── Merchant management ───────────────────────────────────────────────────

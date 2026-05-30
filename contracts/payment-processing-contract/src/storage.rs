@@ -20,6 +20,21 @@ pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
 }
 
+// ── Contract version ──────────────────────────────────────────────────────────
+
+pub fn get_contract_version(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::ContractVersion)
+        .unwrap_or(0)
+}
+
+pub fn set_contract_version(env: &Env, version: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ContractVersion, &version);
+}
+
 // ── Merchant ──────────────────────────────────────────────────────────────────
 
 pub fn get_merchant(env: &Env, address: &Address) -> Option<Merchant> {
