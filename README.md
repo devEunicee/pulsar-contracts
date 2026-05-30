@@ -146,6 +146,32 @@ Save the returned contract ID as `CONTRACT_ID`.
 
 ## Deployment
 
+### Prerequisites — Keys
+
+Before deploying you need a Stellar keypair and a funded account.
+
+**Generate a keypair:**
+
+```bash
+stellar keys generate --global deployer
+stellar keys address deployer        # prints your public key (G...)
+stellar keys show deployer           # prints your secret key (S...) — keep this private
+```
+
+**Fund your testnet account via Friendbot:**
+
+Testnet accounts start with zero balance. Friendbot is a faucet that credits 10 000 XLM to any new address:
+
+```bash
+curl "https://friendbot.stellar.org?addr=$(stellar keys address deployer)"
+```
+
+Or open the URL in a browser. Once funded, use the secret key wherever `<TESTNET_SECRET_KEY>` or `<ADMIN_SECRET_KEY>` appears below.
+
+`$CONTRACT_ID` is the contract address printed by `stellar contract deploy` — save it immediately after running the deploy command.
+
+---
+
 ### Testnet
 
 ```bash
