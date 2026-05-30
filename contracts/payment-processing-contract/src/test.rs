@@ -1161,7 +1161,98 @@ fn test_multisig_payment_expiry() {
     assert_eq!(result, Err(Ok(PaymentError::PaymentExpired)));
 }
 
-// ── T-003: get_payer_payment_history tests ────────────────────────────────────
+// ── T-012: cleanup_expired_payments tests ─────────────────────────────────────
+
+#[test]
+fn test_cleanup_no_expired_returns_zero() {
+    let (env, client) = setup();
+    let (admin, _merchant, _payer, _token) = setup_paid_order(&env, &client);
+    // Default period is 90 days; payment was just made — nothing expired
+    let count = client.cleanup_expired_payments(&admin);
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn test_cleanup_some_expired_only_removes_expired() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &payer, 10000);
+    client.set_payment_cleanup_period(&admin, &3600); // 1h
+
+    // Payment at t=0 (will be expired after 1h)
+    let order1 = PaymentOrder {
+        order_id: bytes(&env, "OLD_001"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 500,
+        description: str(&env, "old"),
+        expires_at: 0,
+    };
+    let (pk1, sig1) = sign_order(&env, &order1);
+    client.process_payment_with_signature(&payer, &order1, &sig1, &pk1);
+
+    // Payment at t=7200 (fresh, not expired)
+    env.ledger().with_mut(|l| l.timestamp = 7200);
+    let order2 = PaymentOrder {
+        order_id: bytes(&env, "NEW_001"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 500,
+        description: str(&env, "new"),
+        expires_at: 0,
+    };
+    let (pk2, sig2) = sign_order(&env, &order2);
+    client.process_payment_with_signature(&payer, &order2, &sig2, &pk2);
+
+    // Advance to t=7201: OLD_001 is expired (age > 1h), NEW_001 is not
+    env.ledger().with_mut(|l| l.timestamp = 7201);
+    let count = client.cleanup_expired_payments(&admin);
+    assert_eq!(count, 1);
+
+    assert_eq!(
+        client.try_get_payment_by_id(&payer, &bytes(&env, "OLD_001")),
+        Err(Ok(PaymentError::PaymentNotFound))
+    );
+    assert!(client.try_get_payment_by_id(&payer, &bytes(&env, "NEW_001")).is_ok());
+}
+
+#[test]
+fn test_cleanup_all_expired_clears_index() {
+    let (env, client) = setup();
+    let (admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+    client.set_payment_cleanup_period(&admin, &3600);
+    env.ledger().set_timestamp(7201);
+
+    let count = client.cleanup_expired_payments(&admin);
+    assert_eq!(count, 1);
+    assert_eq!(
+        client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001")),
+        Err(Ok(PaymentError::PaymentNotFound))
+    );
+}
+
+#[test]
+fn test_cleanup_non_admin_unauthorized() {
+    let (env, client) = setup();
+    let (_admin, _merchant, _payer, _token) = setup_paid_order(&env, &client);
+    let non_admin = Address::generate(&env);
+    let result = client.try_cleanup_expired_payments(&non_admin);
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
 
 fn setup_payer_history(
     env: &Env,
