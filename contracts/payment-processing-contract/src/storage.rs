@@ -322,17 +322,24 @@ pub fn save_global_stats(env: &Env, stats: &GlobalStats) {
     env.storage().instance().set(&DataKey::GlobalStats, stats);
 }
 
-pub fn increment_payment_stats(env: &Env, amount: i128) {
+pub fn increment_payment_stats(env: &Env, amount: i128) -> Result<(), PaymentError> {
     let mut stats = get_global_stats(env);
     stats.total_payments += 1;
-    stats.total_volume += amount;
+    stats.total_volume = stats
+        .total_volume
+        .checked_add(amount)
+        .ok_or(PaymentError::ArithmeticError)?;
     save_global_stats(env, &stats);
+    Ok(())
 }
 
 pub fn increment_refund_stats(env: &Env, amount: i128) -> Result<(), PaymentError> {
     let mut stats = get_global_stats(env);
     stats.total_refunds += 1;
-    stats.total_refund_volume += amount;
+    stats.total_refund_volume = stats
+        .total_refund_volume
+        .checked_add(amount)
+        .ok_or(PaymentError::ArithmeticError)?;
     save_global_stats(env, &stats);
     Ok(())
 }

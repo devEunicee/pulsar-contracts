@@ -280,7 +280,10 @@ impl PaymentContract {
                 }
                 if matches {
                     stats.total_payments += 1;
-                    stats.total_volume += record.amount;
+                    stats.total_volume = stats
+                        .total_volume
+                        .checked_add(record.amount)
+                        .ok_or(PaymentError::ArithmeticError)?;
                 }
             }
         }
@@ -301,7 +304,10 @@ impl PaymentContract {
                 }
                 if matches {
                     stats.total_refunds += 1;
-                    stats.total_refund_volume += record.amount;
+                    stats.total_refund_volume = stats
+                        .total_refund_volume
+                        .checked_add(record.amount)
+                        .ok_or(PaymentError::ArithmeticError)?;
                 }
             }
         }

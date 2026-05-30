@@ -345,6 +345,38 @@ fn test_successful_payment_with_signature() {
 }
 
 #[test]
+fn test_global_stats_overflow_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, i128::MAX);
+
+    // Process a large payment
+    let mut order = make_order(&env, &merchant, &payer, &token);
+    order.amount = i128::MAX;
+    let (pub_key, sig) = sign_order(&env, &order);
+    client.process_payment_with_signature(&payer, &order, &sig);
+
+    // Second payment should overflow total_volume
+    order.order_id = bytes(&env, "ORDER_002");
+    let (pub_key2, sig2) = sign_order(&env, &order);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig2);
+    assert_eq!(result, Err(Ok(PaymentError::ArithmeticError)));
+}
+
+#[test]
 fn test_duplicate_payment_fails() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
