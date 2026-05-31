@@ -26,6 +26,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
   - [Refunds](#refunds)
   - [Multi-Signature Payments](#multi-signature-payments)
   - [Admin Config](#admin-config)
+- [Merchant Categories](#merchant-categories)
 - [Events](#events)
 - [Error Codes](#error-codes)
 - [Contributing](#contributing)
@@ -256,7 +257,9 @@ stellar contract invoke --id $CONTRACT_ID --source-account <MERCHANT_KEY> --netw
   --category Retail
 ```
 
-Categories: `Retail` | `Food` | `Services` | `Digital` | `Other`
+**Categories**: `Retail` | `Food` | `Services` | `Digital` | `Other`
+
+**Note on Category Management**: Merchant categories are currently implemented as a fixed enum. Adding new categories requires a contract upgrade. See [CATEGORY_MIGRATION_GUIDE.md](docs/CATEGORY_MIGRATION_GUIDE.md) for the migration procedure and [ADR-0004](docs/adr/0004-merchant-category-management.md) for the design rationale.
 
 #### `deactivate_merchant`
 
@@ -470,6 +473,34 @@ Default: 90 days (7 776 000 seconds).
 stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network local \
   -- set_payment_cleanup_period --admin <ADDRESS> --period 7776000
 ```
+
+---
+
+## Merchant Categories
+
+Merchant categories help classify and organize merchants by business type. Currently, five predefined categories are supported:
+
+| Category | Description |
+|---|---|
+| `Retail` | Retail stores and e-commerce |
+| `Food` | Restaurants, cafes, food delivery |
+| `Services` | Professional services, consulting, repairs |
+| `Digital` | Software, SaaS, digital products |
+| `Other` | Miscellaneous categories |
+
+### Adding New Categories
+
+New merchant categories require a contract upgrade. This is by design to ensure type safety and prevent invalid categories.
+
+**Process:**
+1. Update the `MerchantCategory` enum in `src/types.rs`
+2. Add test coverage for the new category
+3. Build and test the contract
+4. Deploy the new WASM and call `upgrade()`
+
+**See also:**
+- [CATEGORY_MIGRATION_GUIDE.md](docs/CATEGORY_MIGRATION_GUIDE.md) — Step-by-step migration guide
+- [ADR-0004](docs/adr/0004-merchant-category-management.md) — Design rationale and future considerations
 
 ---
 
