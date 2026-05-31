@@ -325,6 +325,41 @@ pub fn set_default_multisig_expiry(env: &Env, expiry: u64) {
         .set(&DataKey::DefaultMultisigExpiry, &expiry);
 }
 
+// ── Token allowlist (SEC-009) ─────────────────────────────────────────────────
+
+/// Returns true when the token allowlist enforcement is active.
+pub fn is_token_allowlist_enabled(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::TokenAllowlistEnabled)
+        .unwrap_or(false)
+}
+
+pub fn set_token_allowlist_enabled(env: &Env, enabled: bool) {
+    env.storage()
+        .instance()
+        .set(&DataKey::TokenAllowlistEnabled, &enabled);
+}
+
+/// Returns true when `token` is on the admin-managed allowlist.
+pub fn is_token_allowed(env: &Env, token: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AllowedToken(token.clone()))
+        .unwrap_or(false)
+}
+
+pub fn set_token_allowed(env: &Env, token: &Address, allowed: bool) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::AllowedToken(token.clone()), &allowed);
+    env.storage().persistent().extend_ttl(
+        &DataKey::AllowedToken(token.clone()),
+        TTL_THRESHOLD,
+        TTL_LEDGERS,
+    );
+}
+
 // ── Global stats ──────────────────────────────────────────────────────────────
 
 pub fn get_global_stats(env: &Env) -> GlobalStats {

@@ -109,6 +109,52 @@ impl PaymentContract {
         Ok(())
     }
 
+    // ── Token allowlist management (SEC-009) ──────────────────────────────────
+
+    /// Enable or disable token allowlist enforcement. Admin only.
+    ///
+    /// When enabled, only admin-approved token contract addresses may be used
+    /// in payments. This guards against malicious token contracts that could
+    /// exploit the `transfer` call to perform arbitrary on-chain actions.
+    ///
+    /// When disabled (default), any token address is accepted — integrators
+    /// must understand and accept the associated trust model (see SECURITY.md).
+    pub fn set_token_allowlist_mode(
+        env: Env,
+        admins: Vec<Address>,
+        enabled: bool,
+    ) -> Result<(), PaymentError> {
+        helper::require_multi_admin(&env, admins)?;
+        storage::set_token_allowlist_enabled(&env, enabled);
+        env.events().publish(
+            (String::from_str(&env, "token_allowlist_mode_set"),),
+            enabled,
+        );
+        Ok(())
+    }
+
+    /// Add or remove a token contract address from the admin-managed allowlist.
+    /// Admin only. Has no effect when allowlist mode is disabled.
+    pub fn set_token_allowed(
+        env: Env,
+        admins: Vec<Address>,
+        token: Address,
+        allowed: bool,
+    ) -> Result<(), PaymentError> {
+        helper::require_multi_admin(&env, admins)?;
+        storage::set_token_allowed(&env, &token, allowed);
+        env.events().publish(
+            (String::from_str(&env, "token_allowlist_updated"),),
+            (token, allowed),
+        );
+        Ok(())
+    }
+
+    /// Query whether a token address is currently on the allowlist.
+    pub fn is_token_allowed(env: Env, token: Address) -> bool {
+        storage::is_token_allowed(&env, &token)
+    }
+
     /// Pre-approve a merchant address so it can register when whitelist mode is on.
     pub fn approve_merchant_registration(
         env: Env,
@@ -165,6 +211,13 @@ impl PaymentContract {
 
         helper::validate_amount(order.amount)?;
         helper::validate_order_id(&order.order_id)?;
+
+        // SEC-009: Reject payment if token allowlist is enabled and token is not approved.
+        if storage::is_token_allowlist_enabled(&env)
+            && !storage::is_token_allowed(&env, &order.token)
+        {
+            return Err(PaymentError::TokenNotAllowed);
+        }
 
         if storage::get_payment(&env, &order.order_id).is_some() {
             return Err(PaymentError::PaymentAlreadyExists);
@@ -629,6 +682,13 @@ impl PaymentContract {
     ) -> Result<(), PaymentError> {
         initiator.require_auth();
         helper::validate_amount(order.amount)?;
+
+        // SEC-009: Reject payment if token allowlist is enabled and token is not approved.
+        if storage::is_token_allowlist_enabled(&env)
+            && !storage::is_token_allowed(&env, &order.token)
+        {
+            return Err(PaymentError::TokenNotAllowed);
+        }
 
         if storage::get_multisig(&env, &payment_id).is_some() {
             return Err(PaymentError::PaymentAlreadyExists);

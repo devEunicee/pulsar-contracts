@@ -39,4 +39,7 @@ pub enum PaymentError {
     InvalidInput = 50,
     StorageError = 51,
     ArithmeticError = 52,
+
+    // SEC-009: Token allowlist
+    TokenNotAllowed = 60,
 }

@@ -187,4 +187,7 @@ pub enum DataKey {
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
+    // SEC-009: approved token contract allowlist
+    TokenAllowlistEnabled,
+    AllowedToken(Address),
 }
