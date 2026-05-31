@@ -8,9 +8,9 @@ mod storage;
 mod types;
 
 #[cfg(test)]
-mod test;
-#[cfg(test)]
 mod repro_tests;
+#[cfg(test)]
+mod test;
 
 use alloc::vec::Vec as RustVec;
 use soroban_sdk::{
@@ -18,7 +18,7 @@ use soroban_sdk::{
 };
 
 use error::PaymentError;
-use storage::REFUND_WINDOW;
+use storage::{REFUND_GRACE_BUFFER, REFUND_WINDOW};
 use types::{
     DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
     PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
@@ -40,13 +40,19 @@ impl PaymentContract {
         admin.require_auth();
         storage::set_admin(&env, &admin);
         storage::set_contract_version(&env, 1);
-        env.events()
-            .publish((DataKey::Admin,), (String::from_str(&env, "admin_set"), admin));
+        env.events().publish(
+            (DataKey::Admin,),
+            (String::from_str(&env, "admin_set"), admin),
+        );
         Ok(())
     }
 
     /// Upgrade the contract WASM. Admin only.
-    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), PaymentError> {
+    pub fn upgrade(
+        env: Env,
+        admin: Address,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<(), PaymentError> {
         helper::require_admin(&env, &admin)?;
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
@@ -73,8 +79,7 @@ impl PaymentContract {
             return Err(PaymentError::MerchantAlreadyRegistered);
         }
         // Whitelist check: if enabled, merchant must be pre-approved by admin
-        if storage::is_whitelist_enabled(&env)
-            && !storage::is_whitelisted(&env, &merchant_address)
+        if storage::is_whitelist_enabled(&env) && !storage::is_whitelisted(&env, &merchant_address)
         {
             return Err(PaymentError::Unauthorized);
         }
@@ -444,15 +449,20 @@ impl PaymentContract {
             return Err(PaymentError::InvalidInput);
         }
 
-        let record =
-            storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
+        let record = storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
 
         if caller != record.payer && caller != record.merchant_address {
             return Err(PaymentError::Unauthorized);
         }
 
         let now = env.ledger().timestamp();
-        if now > record.paid_at + REFUND_WINDOW {
+        // Deadline = paid_at + 30-day window + 1-hour grace buffer.
+        // The grace buffer absorbs minor ledger timestamp drift near the boundary
+        // so that legitimate refunds submitted just before the deadline are not
+        // rejected due to a few seconds of validator clock variance.
+        // See storage::REFUND_WINDOW and storage::REFUND_GRACE_BUFFER for the
+        // full trust-model rationale.
+        if now > record.paid_at + REFUND_WINDOW + REFUND_GRACE_BUFFER {
             return Err(PaymentError::RefundWindowExpired);
         }
 
@@ -516,10 +526,8 @@ impl PaymentContract {
 
         refund.status = RefundStatus::Approved;
         storage::save_refund(&env, &refund);
-        env.events().publish(
-            (String::from_str(&env, "refund_approved"),),
-            refund_id,
-        );
+        env.events()
+            .publish((String::from_str(&env, "refund_approved"),), refund_id);
         Ok(())
     }
 
@@ -554,15 +562,13 @@ impl PaymentContract {
         refund.status = RefundStatus::Rejected;
         storage::save_refund(&env, &refund);
 
-        let mut record = storage::get_payment(&env, &refund.order_id)
-            .ok_or(PaymentError::PaymentNotFound)?;
+        let mut record =
+            storage::get_payment(&env, &refund.order_id).ok_or(PaymentError::PaymentNotFound)?;
         record.pending_refund_amount = record.pending_refund_amount.saturating_sub(refund.amount);
         storage::save_payment(&env, &record);
 
-        env.events().publish(
-            (String::from_str(&env, "refund_rejected"),),
-            refund_id,
-        );
+        env.events()
+            .publish((String::from_str(&env, "refund_rejected"),), refund_id);
         Ok(())
     }
 
@@ -575,8 +581,8 @@ impl PaymentContract {
             return Err(PaymentError::RefundNotApproved);
         }
 
-        let mut record = storage::get_payment(&env, &refund.order_id)
-            .ok_or(PaymentError::PaymentNotFound)?;
+        let mut record =
+            storage::get_payment(&env, &refund.order_id).ok_or(PaymentError::PaymentNotFound)?;
 
         if caller != record.merchant_address {
             return Err(PaymentError::Unauthorized);
@@ -609,12 +615,8 @@ impl PaymentContract {
         Ok(())
     }
 
-    pub fn get_refund_status(
-        env: Env,
-        refund_id: Bytes,
-    ) -> Result<RefundStatus, PaymentError> {
-        let refund =
-            storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
+    pub fn get_refund_status(env: Env, refund_id: Bytes) -> Result<RefundStatus, PaymentError> {
+        let refund = storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
         Ok(refund.status)
     }
 
@@ -812,30 +814,6 @@ impl PaymentContract {
             };
             match sort_order {
                 SortOrder::Ascending => v1.cmp(&v2),
-                SortOrder::Descending => v2.cmp(&v1),
-            }
-        });
-
-        let next_cursor = if records.len() > cap {
-            records.get(cap - 1).map(|r| r.order_id.clone())
-        } else {
-            None
-        };
-
-        // Truncate to cap and convert back to Soroban Vec
-        let mut page: Vec<PaymentRecord> = Vec::new(env);
-        for i in 0..(records.len().min(cap)) {
-            page.push_back(records[i].clone());
-        }
-
-        Ok(PaymentPage {
-            records: page,
-            next_cursor,
-            total,
-        })
-    }
-}
-ending => v1.cmp(&v2),
                 SortOrder::Descending => v2.cmp(&v1),
             }
         });
