@@ -2,7 +2,8 @@ use soroban_sdk::{Address, Bytes, Env, Vec};
 
 use crate::error::PaymentError;
 use crate::types::{
-    AdminConfig, DataKey, GlobalStats, Merchant, MultisigPayment, PaymentRecord, RefundRecord,
+    AdminConfig, DataKey, GlobalStats, MerchantStats, Merchant, MultisigPayment, PaymentRecord,
+    RefundRecord,
 };
 
 // ── TTL constants ─────────────────────────────────────────────────────────────
@@ -362,5 +363,62 @@ pub fn increment_refund_stats(env: &Env, amount: i128) -> Result<(), PaymentErro
         .checked_add(amount)
         .ok_or(PaymentError::ArithmeticError)?;
     save_global_stats(env, &stats);
+    Ok(())
+}
+
+// ── Merchant stats ────────────────────────────────────────────────────────────
+
+pub fn get_merchant_stats(env: &Env, merchant: &Address) -> MerchantStats {
+    let key = DataKey::MerchantStats(merchant.clone());
+    let result: Option<MerchantStats> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result.unwrap_or(MerchantStats {
+        merchant_address: merchant.clone(),
+        total_payments: 0,
+        total_volume: 0,
+        total_refunds: 0,
+        total_refund_volume: 0,
+    })
+}
+
+pub fn save_merchant_stats(env: &Env, stats: &MerchantStats) {
+    let key = DataKey::MerchantStats(stats.merchant_address.clone());
+    env.storage().persistent().set(&key, stats);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+pub fn increment_merchant_payment_stats(
+    env: &Env,
+    merchant: &Address,
+    amount: i128,
+) -> Result<(), PaymentError> {
+    let mut stats = get_merchant_stats(env, merchant);
+    stats.total_payments += 1;
+    stats.total_volume = stats
+        .total_volume
+        .checked_add(amount)
+        .ok_or(PaymentError::ArithmeticError)?;
+    save_merchant_stats(env, &stats);
+    Ok(())
+}
+
+pub fn increment_merchant_refund_stats(
+    env: &Env,
+    merchant: &Address,
+    amount: i128,
+) -> Result<(), PaymentError> {
+    let mut stats = get_merchant_stats(env, merchant);
+    stats.total_refunds += 1;
+    stats.total_refund_volume = stats
+        .total_refund_volume
+        .checked_add(amount)
+        .ok_or(PaymentError::ArithmeticError)?;
+    save_merchant_stats(env, &stats);
     Ok(())
 }

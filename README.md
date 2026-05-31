@@ -26,6 +26,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
   - [Refunds](#refunds)
   - [Multi-Signature Payments](#multi-signature-payments)
   - [Admin Config](#admin-config)
+- [Analytics](#analytics)
 - [Events](#events)
 - [Error Codes](#error-codes)
 - [Contributing](#contributing)
@@ -43,6 +44,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 | Multi-sig | Require N-of-N signers before executing a payment |
 | History queries | Cursor-based pagination with filtering and sorting |
 | Global stats | Admin-only aggregate payment and refund statistics |
+| Merchant stats | Per-merchant analytics with optional date filtering |
 
 ---
 
@@ -355,6 +357,26 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
   --date_end null
 ```
 
+#### `get_merchant_stats`
+
+Returns per-merchant payment and refund statistics. Accessible by the merchant (own stats) or admin (any merchant).
+
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <MERCHANT_KEY> --network local \
+  -- get_merchant_stats \
+  --merchant <ADDRESS> \
+  --date_start null \
+  --date_end null
+```
+
+**Returns**: `MerchantStats` with `total_payments`, `total_volume`, `total_refunds`, `total_refund_volume`
+
+**Query Modes**:
+- **Unfiltered** (no date range): Returns cached stats (O(1))
+- **Filtered** (with date range): Computes stats on-demand (O(n) where n = merchant's payment count)
+
+**See also**: [ANALYTICS_GUIDE.md](docs/ANALYTICS_GUIDE.md) for detailed usage and best practices.
+
 ---
 
 ### Refunds
@@ -470,6 +492,78 @@ Default: 90 days (7 776 000 seconds).
 stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network local \
   -- set_payment_cleanup_period --admin <ADDRESS> --period 7776000
 ```
+
+---
+
+## Analytics
+
+The contract provides on-chain analytics capabilities for monitoring payment activity and merchant performance.
+
+### Global Payment Stats
+
+Admin-only aggregate statistics across all merchants and payments.
+
+**Function**: `get_global_payment_stats(admins, date_start, date_end)`
+
+**Returns**: `GlobalStats` with `total_payments`, `total_volume`, `total_refunds`, `total_refund_volume`
+
+**Example**:
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network local \
+  -- get_global_payment_stats \
+  --admins '["<ADMIN_ADDRESS>"]' \
+  --date_start null \
+  --date_end null
+```
+
+### Per-Merchant Stats
+
+Per-merchant payment and refund statistics with optional date filtering.
+
+**Function**: `get_merchant_stats(merchant, date_start, date_end)`
+
+**Access**: Merchant (own stats) or Admin (any merchant)
+
+**Returns**: `MerchantStats` with merchant address, payment count, volume, refund count, and refund volume
+
+**Example**:
+```bash
+# Merchant queries their own stats
+stellar contract invoke --id $CONTRACT_ID --source-account <MERCHANT_KEY> --network local \
+  -- get_merchant_stats \
+  --merchant <MERCHANT_ADDRESS> \
+  --date_start null \
+  --date_end null
+
+# Admin queries a merchant's stats with date filtering
+stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network local \
+  -- get_merchant_stats \
+  --merchant <MERCHANT_ADDRESS> \
+  --date_start 1704067200 \
+  --date_end 1704153600
+```
+
+**Query Modes**:
+- **Unfiltered** (no date range): Returns cached stats (O(1) performance)
+- **Filtered** (with date range): Computes stats on-demand (O(n) where n = merchant's payment count)
+
+### Analytics Strategy
+
+The contract implements a **hybrid analytics approach**:
+
+1. **On-Chain Analytics** (current):
+   - Per-merchant stats with date filtering
+   - Global aggregate stats
+   - Cached for performance
+   - Suitable for real-time queries and merchant dashboards
+
+2. **Off-Chain Analytics** (future - BE-001):
+   - Event-driven indexer service
+   - Per-token breakdown and time-series data
+   - Complex queries and historical analysis
+   - Reduces on-chain computation overhead
+
+**See also**: [ANALYTICS_GUIDE.md](docs/ANALYTICS_GUIDE.md) for detailed usage, best practices, and performance considerations.
 
 ---
 

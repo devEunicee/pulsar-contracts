@@ -143,11 +143,21 @@ pub struct PaymentPage {
     pub total: u32,
 }
 
-// ── Global stats ──────────────────────────────────────────────────────────────
+// ── Stats ─────────────────────────────────────────────────────────────────────
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GlobalStats {
+    pub total_payments: u64,
+    pub total_volume: i128,
+    pub total_refunds: u64,
+    pub total_refund_volume: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MerchantStats {
+    pub merchant_address: Address,
     pub total_payments: u64,
     pub total_volume: i128,
     pub total_refunds: u64,
@@ -183,6 +193,7 @@ pub enum DataKey {
     GlobalPaymentChunk(u32),
     GlobalPaymentCount,
     GlobalStats,
+    MerchantStats(Address),
     AllPayments,
     AllRefunds,
     WhitelistEnabled,
