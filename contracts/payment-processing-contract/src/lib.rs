@@ -33,6 +33,7 @@ impl PaymentContract {
 
     /// One-time admin initialisation with N-of-M multi-sig model.
     pub fn set_admin(env: Env, admins: Vec<Address>, threshold: u32) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         if storage::get_admin_config(&env).is_some() || storage::get_admin(&env).is_some() {
             return Err(PaymentError::AdminAlreadySet);
         }
@@ -47,6 +48,7 @@ impl PaymentContract {
 
     /// Upgrade the contract WASM. Admin only.
     pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_admin(&env, &admin)?;
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
@@ -54,7 +56,18 @@ impl PaymentContract {
 
     /// Return the stored contract version.
     pub fn get_version(env: Env) -> u32 {
+        storage::bump_instance_ttl(&env);
         storage::get_contract_version(&env)
+    }
+
+    /// Extend the instance storage TTL so the contract never goes dormant.
+    ///
+    /// Instance storage holds Admin, GlobalStats, CleanupPeriod, and
+    /// DefaultMultisigExpiry. If the contract goes dormant and instance storage
+    /// expires the contract becomes unusable. This function is callable by
+    /// anyone and should be invoked periodically to keep the contract alive.
+    pub fn bump_instance_ttl(env: Env) {
+        storage::bump_instance_ttl(&env);
     }
 
     // ── Merchant management ───────────────────────────────────────────────────
@@ -68,6 +81,7 @@ impl PaymentContract {
         category: MerchantCategory,
         signing_public_key: Option<BytesN<32>>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         merchant_address.require_auth();
         if storage::get_merchant(&env, &merchant_address).is_some() {
             return Err(PaymentError::MerchantAlreadyRegistered);
@@ -104,6 +118,7 @@ impl PaymentContract {
         admins: Vec<Address>,
         enabled: bool,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         storage::set_whitelist_enabled(&env, enabled);
         Ok(())
@@ -115,6 +130,7 @@ impl PaymentContract {
         admins: Vec<Address>,
         merchant_address: Address,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         storage::set_whitelisted(&env, &merchant_address, true);
         Ok(())
@@ -125,6 +141,7 @@ impl PaymentContract {
         merchant_address: Address,
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         if let Some(admins) = admin_authorizers {
             helper::require_multi_admin(&env, admins)?;
         } else {
@@ -143,6 +160,7 @@ impl PaymentContract {
     }
 
     pub fn get_merchant(env: Env, merchant_address: Address) -> Result<Merchant, PaymentError> {
+        storage::bump_instance_ttl(&env);
         storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)
     }
 
@@ -156,6 +174,7 @@ impl PaymentContract {
         signature: BytesN<64>,
         merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         payer.require_auth();
 
         // Ensure the order's embedded payer matches the authenticated payer
@@ -231,6 +250,7 @@ impl PaymentContract {
         caller: Address,
         order_id: Bytes,
     ) -> Result<PaymentRecord, PaymentError> {
+        storage::bump_instance_ttl(&env);
         caller.require_auth();
         let record = storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
 
@@ -257,6 +277,7 @@ impl PaymentContract {
         sort_field: SortField,
         sort_order: SortOrder,
     ) -> Result<PaymentPage, PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_merchant(&env, &merchant, &merchant)?;
         let ids = storage::get_merchant_payment_ids(&env, &merchant);
         Self::paginate_payments(&env, ids, cursor, limit, filter, sort_field, sort_order)
@@ -271,6 +292,7 @@ impl PaymentContract {
         sort_field: SortField,
         sort_order: SortOrder,
     ) -> Result<PaymentPage, PaymentError> {
+        storage::bump_instance_ttl(&env);
         payer.require_auth();
         let ids = storage::get_payer_payment_ids(&env, &payer);
         Self::paginate_payments(&env, ids, cursor, limit, filter, sort_field, sort_order)
@@ -282,6 +304,7 @@ impl PaymentContract {
         date_start: Option<u64>,
         date_end: Option<u64>,
     ) -> Result<GlobalStats, PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
 
         if date_start.is_none() && date_end.is_none() {
@@ -354,6 +377,7 @@ impl PaymentContract {
         order_id: Bytes,
         refunded_amount: i128,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         // Intentionally removed from public ABI: refund state must be modified
         // exclusively via the refund workflow (initiate/approve/execute).
         Err(PaymentError::InvalidInput)
@@ -364,6 +388,7 @@ impl PaymentContract {
         admins: Vec<Address>,
         order_id: Bytes,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         let record = storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
         storage::remove_payment(&env, &order_id);
@@ -374,6 +399,7 @@ impl PaymentContract {
     }
 
     pub fn cleanup_expired_payments(env: Env, admins: Vec<Address>) -> Result<u32, PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         let period = storage::get_cleanup_period(&env);
         let now = env.ledger().timestamp();
@@ -406,6 +432,7 @@ impl PaymentContract {
         admins: Vec<Address>,
         period: u64,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         if period == 0 {
             return Err(PaymentError::InvalidInput);
@@ -419,6 +446,7 @@ impl PaymentContract {
         admins: Vec<Address>,
         expiry: u64,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         if expiry < 3600 {
             return Err(PaymentError::InvalidInput);
@@ -437,6 +465,7 @@ impl PaymentContract {
         amount: i128,
         reason: String,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         caller.require_auth();
         helper::validate_amount(amount)?;
 
@@ -492,6 +521,7 @@ impl PaymentContract {
         refund_id: Bytes,
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
@@ -529,6 +559,7 @@ impl PaymentContract {
         refund_id: Bytes,
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
@@ -567,6 +598,7 @@ impl PaymentContract {
     }
 
     pub fn execute_refund(env: Env, caller: Address, refund_id: Bytes) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
@@ -613,6 +645,7 @@ impl PaymentContract {
         env: Env,
         refund_id: Bytes,
     ) -> Result<RefundStatus, PaymentError> {
+        storage::bump_instance_ttl(&env);
         let refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
         Ok(refund.status)
@@ -627,6 +660,7 @@ impl PaymentContract {
         order: PaymentOrder,
         required_signers: Vec<Address>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         initiator.require_auth();
         helper::validate_amount(order.amount)?;
 
@@ -683,6 +717,7 @@ impl PaymentContract {
         signer: Address,
         payment_id: Bytes,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         signer.require_auth();
         let mut ms =
             storage::get_multisig(&env, &payment_id).ok_or(PaymentError::MultisigNotFound)?;
@@ -714,6 +749,7 @@ impl PaymentContract {
         executor: Address,
         payment_id: Bytes,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         executor.require_auth();
         let mut ms =
             storage::get_multisig(&env, &payment_id).ok_or(PaymentError::MultisigNotFound)?;
