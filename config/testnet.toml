@@ -1,0 +1,30 @@
+# Testnet environment configuration
+# This file is safe to commit — it contains no secrets.
+
+[network]
+# Soroban RPC endpoint for Stellar Testnet
+rpc_url = "https://soroban-testnet.stellar.org"
+network_passphrase = "Test SDF Network ; September 2015"
+horizon_url = "https://horizon-testnet.stellar.org"
+
+[contract]
+# Contract ID on testnet — update after each deployment.
+contract_id = ""
+
+[admin]
+# Public key of the testnet admin account (not a secret — safe to commit).
+# The corresponding secret key must be set in the environment variable:
+#   ADMIN_SECRET_KEY=S...
+admin_public_key = ""
+
+[token]
+# Address of the native XLM token wrapper on testnet.
+native_token_address = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+
+# ── Secret values (NEVER commit these) ────────────────────────────────────────
+# The following values must be supplied via environment variables at runtime:
+#
+#   ADMIN_SECRET_KEY   — Stellar secret key (S...) for the testnet admin account
+#
+# Example (.env file, gitignored):
+#   ADMIN_SECRET_KEY=SCZANGBA5RLMPI7JMTP2BYASZVIL7XQ4AQZPQOTSXMS7ZGFU5D4QOKKQ
