@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 use soroban_sdk::{Address, Bytes, Env, Vec};
 
 use crate::error::PaymentError;
