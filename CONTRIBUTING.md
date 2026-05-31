@@ -31,6 +31,7 @@ cargo build --target wasm32-unknown-unknown --release
 
 - **Formatting**: run `cargo fmt` before committing.
 - **Linting**: run `cargo clippy -- -D warnings`; fix all warnings.
+- **License headers**: all `.rs` files must start with `// SPDX-License-Identifier: MIT` (see [LICENSE_HEADERS.md](docs/LICENSE_HEADERS.md)).
 - **Tests**: every new function must have at least one unit test.
 - **No unsafe**: do not use `unsafe` blocks.
 - **No std**: the contract crate is `#![no_std]`; keep it that way.
