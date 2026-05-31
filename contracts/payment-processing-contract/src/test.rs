@@ -1499,7 +1499,7 @@ fn test_payer_history_filter_date_range() {
         date_end: Some(2000),
         amount_min: None,
         amount_max: None,
-        token: None,
+        tokens: None,
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1526,7 +1526,7 @@ fn test_payer_history_filter_amount_range() {
         date_end: None,
         amount_min: Some(100),
         amount_max: Some(200),
-        token: None,
+        tokens: None,
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1592,7 +1592,7 @@ fn test_payer_history_filter_by_token() {
         date_end: None,
         amount_min: None,
         amount_max: None,
-        token: Some(token2.clone()),
+        tokens: Some(Vec::from_array(&env, [token2.clone()])),
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1630,7 +1630,7 @@ fn test_payer_history_filter_by_status() {
         date_end: None,
         amount_min: None,
         amount_max: None,
-        token: None,
+        tokens: None,
         status: StatusFilter::PartiallyRefunded,
     };
     let page = client.get_payer_payment_history(
@@ -1870,4 +1870,139 @@ fn test_concurrent_refunds_exceeding_limit_second_rejected() {
         &str(&env, "second"),
     );
     assert_eq!(result, Err(Ok(PaymentError::RefundAmountExceedsPayment)));
+}
+
+// ── Multi-token filter tests ──────────────────────────────────────────────────
+
+fn setup_three_token_payments(env: &Env, client: &PaymentContractClient) -> (Address, Address, Address, Address, Address, Address) {
+    let admin = Address::generate(env);
+    let merchant = Address::generate(env);
+    let payer = Address::generate(env);
+    let token1 = create_token(env, &admin);
+    let token2 = create_token(env, &admin);
+    let token3 = create_token(env, &admin);
+
+    client.set_admin(&vec![env, admin.clone()], &1);
+    client.register_merchant(&merchant, &str(env, "Store"), &str(env, "desc"), &str(env, "c@c.com"), &MerchantCategory::Retail, &None);
+    mint(env, &token1, &admin, &payer, 5000);
+    mint(env, &token2, &admin, &payer, 5000);
+    mint(env, &token3, &admin, &payer, 5000);
+
+    for (id, tok, amt) in [
+        ("MT_001", &token1, 100i128),
+        ("MT_002", &token2, 200),
+        ("MT_003", &token3, 300),
+    ] {
+        let order = PaymentOrder {
+            order_id: bytes(env, id),
+            merchant_address: merchant.clone(),
+            payer: payer.clone(),
+            token: tok.clone(),
+            amount: amt,
+            description: str(env, "d"),
+            expires_at: 0,
+        };
+        let (_pk, sig) = sign_order(env, &order);
+        client.process_payment_with_signature(&payer, &order, &sig, &BytesN::from_array(env, &[0u8; 32]));
+    }
+    (admin, merchant, payer, token1, token2, token3)
+}
+
+#[test]
+fn test_filter_tokens_none_matches_all() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _t1, _t2, _t3) = setup_three_token_payments(&env, &client);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter { date_start: None, date_end: None, amount_min: None, amount_max: None, tokens: None, status: StatusFilter::Any };
+    let page = client.get_payer_payment_history(&payer, &None, &10, &Some(filter), &SortField::Amount, &SortOrder::Ascending);
+    assert_eq!(page.total, 3);
+}
+
+#[test]
+fn test_filter_tokens_empty_vec_matches_all() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _t1, _t2, _t3) = setup_three_token_payments(&env, &client);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter { date_start: None, date_end: None, amount_min: None, amount_max: None, tokens: Some(Vec::new(&env)), status: StatusFilter::Any };
+    let page = client.get_payer_payment_history(&payer, &None, &10, &Some(filter), &SortField::Amount, &SortOrder::Ascending);
+    assert_eq!(page.total, 3);
+}
+
+#[test]
+fn test_filter_single_token_matches_one() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, token1, _t2, _t3) = setup_three_token_payments(&env, &client);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter { date_start: None, date_end: None, amount_min: None, amount_max: None, tokens: Some(Vec::from_array(&env, [token1.clone()])), status: StatusFilter::Any };
+    let page = client.get_payer_payment_history(&payer, &None, &10, &Some(filter), &SortField::Amount, &SortOrder::Ascending);
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().token, token1);
+}
+
+#[test]
+fn test_filter_two_tokens_matches_two() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, token1, token2, _t3) = setup_three_token_payments(&env, &client);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter { date_start: None, date_end: None, amount_min: None, amount_max: None, tokens: Some(Vec::from_array(&env, [token1.clone(), token2.clone()])), status: StatusFilter::Any };
+    let page = client.get_payer_payment_history(&payer, &None, &10, &Some(filter), &SortField::Amount, &SortOrder::Ascending);
+    assert_eq!(page.total, 2);
+    let amounts: alloc::vec::Vec<i128> = (0..page.records.len()).map(|i| page.records.get(i as u32).unwrap().amount).collect();
+    assert!(amounts.contains(&100));
+    assert!(amounts.contains(&200));
+    assert!(!amounts.contains(&300));
+}
+
+#[test]
+fn test_filter_all_three_tokens_matches_all() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, token1, token2, token3) = setup_three_token_payments(&env, &client);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter { date_start: None, date_end: None, amount_min: None, amount_max: None, tokens: Some(Vec::from_array(&env, [token1.clone(), token2.clone(), token3.clone()])), status: StatusFilter::Any };
+    let page = client.get_payer_payment_history(&payer, &None, &10, &Some(filter), &SortField::Amount, &SortOrder::Ascending);
+    assert_eq!(page.total, 3);
+}
+
+#[test]
+fn test_filter_unrelated_token_matches_none() {
+    let (env, client) = setup();
+    let (admin, _merchant, payer, _t1, _t2, _t3) = setup_three_token_payments(&env, &client);
+    let other_token = create_token(&env, &admin);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter { date_start: None, date_end: None, amount_min: None, amount_max: None, tokens: Some(Vec::from_array(&env, [other_token])), status: StatusFilter::Any };
+    let page = client.get_payer_payment_history(&payer, &None, &10, &Some(filter), &SortField::Amount, &SortOrder::Ascending);
+    assert_eq!(page.total, 0);
+}
+
+#[test]
+fn test_filter_tokens_combined_with_amount_filter() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, token1, token2, _t3) = setup_three_token_payments(&env, &client);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    // tokens = [token1, token2] AND amount_min = 150 → only token2 (200) matches
+    let filter = PaymentFilter { date_start: None, date_end: None, amount_min: Some(150), amount_max: None, tokens: Some(Vec::from_array(&env, [token1.clone(), token2.clone()])), status: StatusFilter::Any };
+    let page = client.get_payer_payment_history(&payer, &None, &10, &Some(filter), &SortField::Amount, &SortOrder::Ascending);
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().token, token2);
+}
+
+#[test]
+fn test_merchant_history_multi_token_filter() {
+    let (env, client) = setup();
+    let (_admin, merchant, _payer, token1, _t2, token3) = setup_three_token_payments(&env, &client);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter { date_start: None, date_end: None, amount_min: None, amount_max: None, tokens: Some(Vec::from_array(&env, [token1.clone(), token3.clone()])), status: StatusFilter::Any };
+    let page = client.get_merchant_payment_history(&merchant, &None, &10, &Some(filter), &SortField::Amount, &SortOrder::Ascending);
+    assert_eq!(page.total, 2);
+    let amounts: alloc::vec::Vec<i128> = (0..page.records.len()).map(|i| page.records.get(i as u32).unwrap().amount).collect();
+    assert!(amounts.contains(&100));
+    assert!(amounts.contains(&300));
 }
