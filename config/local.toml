@@ -1,0 +1,32 @@
+# Local development environment configuration
+# This file is safe to commit — it contains no secrets.
+
+[network]
+# Soroban RPC endpoint for local standalone node
+rpc_url = "http://localhost:8000/soroban/rpc"
+network_passphrase = "Standalone Network ; February 2017"
+horizon_url = "http://localhost:8000"
+
+[contract]
+# Contract ID is populated after first deployment.
+# Leave empty for a fresh local deploy.
+contract_id = ""
+
+[admin]
+# Public key of the admin account (not a secret — safe to commit).
+# The corresponding secret key must be set in the environment variable:
+#   ADMIN_SECRET_KEY=S...
+admin_public_key = ""
+
+[token]
+# Address of the native XLM token wrapper on the local network.
+# Override with a custom SAC address if needed.
+native_token_address = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+
+# ── Secret values (NEVER commit these) ────────────────────────────────────────
+# The following values must be supplied via environment variables at runtime:
+#
+#   ADMIN_SECRET_KEY   — Stellar secret key (S...) for the admin account
+#
+# Example (.env file, gitignored):
+#   ADMIN_SECRET_KEY=SCZANGBA5RLMPI7JMTP2BYASZVIL7XQ4AQZPQOTSXMS7ZGFU5D4QOKKQ
