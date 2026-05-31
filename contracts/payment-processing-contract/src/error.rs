@@ -19,7 +19,6 @@ pub enum PaymentError {
     InvalidAmount = 22,
     InvalidSignature = 23,
     PaymentExpired = 24,
-    // InsufficientBalance removed: token transfers from SDK panic on insufficient funds
 
     // Refund
     RefundNotFound = 30,
@@ -39,4 +38,16 @@ pub enum PaymentError {
     InvalidInput = 50,
     StorageError = 51,
     ArithmeticError = 52,
+
+    // Subscription
+    /// Subscription ID not found in storage.
+    SubscriptionNotFound = 60,
+    /// A subscription with this ID already exists.
+    SubscriptionAlreadyExists = 61,
+    /// Subscription is not in Active state (e.g. already cancelled).
+    SubscriptionNotActive = 62,
+    /// Payment interval has not elapsed since the last charge.
+    /// The off-chain scheduler must wait until `last_charged_at + interval`
+    /// before invoking `process_subscription_payment` again.
+    SubscriptionIntervalNotElapsed = 63,
 }
