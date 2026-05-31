@@ -28,6 +28,12 @@ pub enum PaymentError {
     RefundAmountExceedsPayment = 33,
     RefundNotApproved = 34,
     RefundAlreadyCompleted = 35,
+    /// Refund must be in Rejected state to be disputed.
+    RefundNotRejected = 36,
+    /// Dispute can only be raised by the original payer.
+    DisputeUnauthorized = 37,
+    /// Refund is not in Disputed state; cannot resolve.
+    RefundNotDisputed = 38,
 
     // Multisig
     MultisigNotFound = 40,
