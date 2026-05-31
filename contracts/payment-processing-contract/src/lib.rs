@@ -767,6 +767,23 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Return the full state of a multisig payment.
+    /// Caller must be one of the required_signers or the contract admin.
+    pub fn get_multisig_payment(
+        env: Env,
+        caller: Address,
+        payment_id: Bytes,
+    ) -> Result<MultisigPayment, PaymentError> {
+        caller.require_auth();
+        let ms = storage::get_multisig(&env, &payment_id)
+            .ok_or(PaymentError::MultisigNotFound)?;
+        let is_admin = storage::get_admin(&env).map(|a| a == caller).unwrap_or(false);
+        if !is_admin && !ms.required_signers.contains(&caller) {
+            return Err(PaymentError::Unauthorized);
+        }
+        Ok(ms)
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     fn paginate_payments(
