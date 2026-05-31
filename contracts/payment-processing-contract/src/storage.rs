@@ -3,6 +3,7 @@ use soroban_sdk::{Address, Bytes, Env, Vec};
 use crate::error::PaymentError;
 use crate::types::{
     AdminConfig, DataKey, GlobalStats, Merchant, MultisigPayment, PaymentRecord, RefundRecord,
+    SubscriptionState,
 };
 
 // ── TTL constants ─────────────────────────────────────────────────────────────
@@ -20,6 +21,14 @@ pub fn get_admin(env: &Env) -> Option<Address> {
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
+}
+
+pub fn get_admin_config(env: &Env) -> Option<AdminConfig> {
+    env.storage().instance().get(&DataKey::AdminConfig)
+}
+
+pub fn set_admin_config(env: &Env, config: &AdminConfig) {
+    env.storage().instance().set(&DataKey::AdminConfig, config);
 }
 
 // ── Contract version ──────────────────────────────────────────────────────────
@@ -86,8 +95,6 @@ pub fn remove_payment(env: &Env, order_id: &Bytes) {
 }
 
 // ── Payment index lists ───────────────────────────────────────────────────────
-
-const CHUNK_SIZE: u32 = 100;
 
 pub fn get_merchant_payment_ids(env: &Env, merchant: &Address) -> Vec<Bytes> {
     let key = DataKey::MerchantPayments(merchant.clone());
@@ -363,4 +370,25 @@ pub fn increment_refund_stats(env: &Env, amount: i128) -> Result<(), PaymentErro
         .ok_or(PaymentError::ArithmeticError)?;
     save_global_stats(env, &stats);
     Ok(())
+}
+
+// ── Subscription ──────────────────────────────────────────────────────────────
+
+pub fn get_subscription(env: &Env, subscription_id: &Bytes) -> Option<SubscriptionState> {
+    let key = DataKey::Subscription(subscription_id.clone());
+    let result = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
+}
+
+pub fn save_subscription(env: &Env, sub: &SubscriptionState) {
+    let key = DataKey::Subscription(sub.subscription_id.clone());
+    env.storage().persistent().set(&key, sub);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
