@@ -353,7 +353,12 @@ fn test_successful_payment_with_signature() {
     let order = make_order(&env, &merchant, &payer, &token);
     let (pub_key, sig) = sign_order(&env, &order);
 
-    client.process_payment_with_signature(&payer, &order, &sig, &BytesN::from_array(&env, &[0u8; 32]));
+    client.process_payment_with_signature(
+        &payer,
+        &order,
+        &sig,
+        &BytesN::from_array(&env, &[0u8; 32]),
+    );
 
     let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
     assert_eq!(record.amount, 1000);
@@ -414,8 +419,18 @@ fn test_duplicate_payment_fails() {
     let order = make_order(&env, &merchant, &payer, &token);
     let (pub_key, sig) = sign_order(&env, &order);
 
-    client.process_payment_with_signature(&payer, &order, &sig, &BytesN::from_array(&env, &[0u8; 32]));
-    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &BytesN::from_array(&env, &[0u8; 32]));
+    client.process_payment_with_signature(
+        &payer,
+        &order,
+        &sig,
+        &BytesN::from_array(&env, &[0u8; 32]),
+    );
+    let result = client.try_process_payment_with_signature(
+        &payer,
+        &order,
+        &sig,
+        &BytesN::from_array(&env, &[0u8; 32]),
+    );
     assert_eq!(result, Err(Ok(PaymentError::PaymentAlreadyExists)));
 }
 
@@ -444,7 +459,12 @@ fn test_payment_expired_fails() {
     order.expires_at = 1000; // already expired
 
     let (pub_key, sig) = sign_order(&env, &order);
-    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &BytesN::from_array(&env, &[0u8; 32]));
+    let result = client.try_process_payment_with_signature(
+        &payer,
+        &order,
+        &sig,
+        &BytesN::from_array(&env, &[0u8; 32]),
+    );
     assert_eq!(result, Err(Ok(PaymentError::PaymentExpired)));
 }
 
@@ -473,7 +493,12 @@ fn test_signature_over_different_amount_fails() {
     // Change amount after signing
     order.amount = 2000;
 
-    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &BytesN::from_array(&env, &[0u8; 32]));
+    let result = client.try_process_payment_with_signature(
+        &payer,
+        &order,
+        &sig,
+        &BytesN::from_array(&env, &[0u8; 32]),
+    );
     // In Soroban, ed25519_verify panics on failure, which try_... returns as HostError(Crypto, InvalidInput)
     // or just fails the contract call.
     assert!(result.is_err());
@@ -503,7 +528,12 @@ fn setup_paid_order(
 
     let order = make_order(env, &merchant, &payer, &token);
     let (pub_key, sig) = sign_order(env, &order);
-    client.process_payment_with_signature(&payer, &order, &sig, &BytesN::from_array(&env, &[0u8; 32]));
+    client.process_payment_with_signature(
+        &payer,
+        &order,
+        &sig,
+        &BytesN::from_array(&env, &[0u8; 32]),
+    );
 
     (admin, merchant, payer, token)
 }
@@ -542,7 +572,10 @@ fn test_successful_refund_flow() {
 
     // Balance assertions: payer receives refund, merchant pays it
     assert_eq!(token_client.balance(&payer), payer_balance_before + 500);
-    assert_eq!(token_client.balance(&merchant), merchant_balance_before - 500);
+    assert_eq!(
+        token_client.balance(&merchant),
+        merchant_balance_before - 500
+    );
 }
 
 #[test]
@@ -570,7 +603,10 @@ fn test_full_refund_flow_with_balance_assertions() {
     assert_eq!(record.status, PaymentStatus::FullyRefunded);
 
     assert_eq!(token_client.balance(&payer), payer_balance_before + 1000);
-    assert_eq!(token_client.balance(&merchant), merchant_balance_before - 1000);
+    assert_eq!(
+        token_client.balance(&merchant),
+        merchant_balance_before - 1000
+    );
 }
 
 #[test]
@@ -737,7 +773,14 @@ fn test_large_payment_index_growth() {
         client.process_payment_with_signature(&payer, &order, &sig, &pub_key);
     }
 
-    let history = client.get_merchant_payment_history(&merchant, &None, &10, &None, &SortField::Date, &SortOrder::Ascending);
+    let history = client.get_merchant_payment_history(
+        &merchant,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
     assert_eq!(history.total, 250);
     assert_eq!(history.records.len(), 10);
 }
@@ -747,7 +790,13 @@ fn test_execute_refund_unauthorized_fails() {
     let (env, client) = setup();
     let (_admin, merchant, payer, _token) = setup_paid_order(&env, &client);
 
-    client.initiate_refund(&payer, &bytes(&env, "R1"), &bytes(&env, "ORDER_001"), &500, &str(&env, "reason"));
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "R1"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "reason"),
+    );
     client.approve_refund(&merchant, &bytes(&env, "R1"));
 
     let other = Address::generate(&env);
@@ -875,8 +924,61 @@ fn test_initiate_multisig_duplicate_signer_fails() {
     signers.push_back(signer1.clone());
     signers.push_back(signer1.clone()); // Duplicate
 
-    let result = client.try_initiate_multisig_payment(&signer1, &bytes(&env, "MS_DUP"), &order, &signers);
+    let result =
+        client.try_initiate_multisig_payment(&signer1, &bytes(&env, "MS_DUP"), &order, &signers);
     assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
+fn test_sign_multisig_payment_unauthorized_signer_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let outsider = Address::generate(&env); // not in required_signers
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &signer1, 5000);
+
+    let order = PaymentOrder {
+        order_id: bytes(&env, "MS_UNAUTH"),
+        merchant_address: merchant.clone(),
+        payer: signer1.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "Multisig order"),
+        expires_at: 0,
+    };
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2.clone());
+
+    client.initiate_multisig_payment(&signer1, &bytes(&env, "MS_UNAUTH"), &order, &signers);
+
+    // outsider is not in required_signers — must be rejected
+    let result = client.try_sign_multisig_payment(&outsider, &bytes(&env, "MS_UNAUTH"));
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+
+    // No signature was recorded: execution still fails with InsufficientSignatures
+    // (0 of 2 required signers have signed), proving payment state is unchanged.
+    let exec_result = client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_UNAUTH"));
+    assert_eq!(exec_result, Err(Ok(PaymentError::InsufficientSignatures)));
+
+    // Valid signers can still sign normally, confirming the payment is not corrupted.
+    client.sign_multisig_payment(&signer1, &bytes(&env, "MS_UNAUTH"));
+    client.sign_multisig_payment(&signer2, &bytes(&env, "MS_UNAUTH"));
+    client.execute_multisig_payment(&signer1, &bytes(&env, "MS_UNAUTH"));
 }
 
 // ── Admin config tests ────────────────────────────────────────────────────────
@@ -956,8 +1058,6 @@ fn test_set_whitelist_mode_non_admin_fails() {
     assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
 }
 
-
-
 #[test]
 fn test_archive_payment_record_removes_from_indexes() {
     let (env, client) = setup();
@@ -1009,7 +1109,8 @@ fn test_archive_payment_record_non_admin_fails() {
     let (env, client) = setup();
     let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
 
-    let result = client.try_archive_payment_record(&vec![&env, payer.clone()], &bytes(&env, "ORDER_001"));
+    let result =
+        client.try_archive_payment_record(&vec![&env, payer.clone()], &bytes(&env, "ORDER_001"));
     assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
 }
 
@@ -1019,11 +1120,10 @@ fn test_archive_payment_record_not_found_fails() {
     let admin = Address::generate(&env);
     client.set_admin(&vec![&env, admin.clone()], &1);
 
-    let result = client.try_archive_payment_record(&vec![&env, admin.clone()], &bytes(&env, "NONEXISTENT"));
+    let result =
+        client.try_archive_payment_record(&vec![&env, admin.clone()], &bytes(&env, "NONEXISTENT"));
     assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
 }
-
-
 
 #[test]
 fn test_set_cleanup_period() {
@@ -1062,7 +1162,8 @@ fn test_set_cleanup_period_valid_is_persisted() {
     assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
 }
 
-
+#[test]
+fn test_get_global_payment_stats_with_date_filter() {
     let (env, client) = setup();
 
     // Payment 1: t=1000 (amount=1000 from setup_paid_order)
@@ -1085,7 +1186,13 @@ fn test_set_cleanup_period_valid_is_persisted() {
 
     // Refund for Payment 1: initiated at t=3000, executed at t=4000
     env.ledger().with_mut(|l| l.timestamp = 3000);
-    client.initiate_refund(&payer, &bytes(&env, "R1"), &bytes(&env, "ORDER_001"), &500, &str(&env, "reason"));
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "R1"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "reason"),
+    );
     client.approve_refund(&merchant, &bytes(&env, "R1"));
     env.ledger().with_mut(|l| l.timestamp = 4000);
     client.execute_refund(&merchant, &bytes(&env, "R1"));
@@ -1098,13 +1205,15 @@ fn test_set_cleanup_period_valid_is_persisted() {
     assert_eq!(stats.total_refund_volume, 500);
 
     // Filtered: only t=1000 to t=1500 (Payment 1 only)
-    let stats = client.get_global_payment_stats(&vec![&env, admin.clone()], &Some(500), &Some(1500));
+    let stats =
+        client.get_global_payment_stats(&vec![&env, admin.clone()], &Some(500), &Some(1500));
     assert_eq!(stats.total_payments, 1);
     assert_eq!(stats.total_volume, 1000);
     assert_eq!(stats.total_refunds, 0);
 
     // Filtered: only t=2500 to t=3500 (Refund 1 only, because initiated_at=3000)
-    let stats = client.get_global_payment_stats(&vec![&env, admin.clone()], &Some(2500), &Some(3500));
+    let stats =
+        client.get_global_payment_stats(&vec![&env, admin.clone()], &Some(2500), &Some(3500));
     assert_eq!(stats.total_payments, 0);
     assert_eq!(stats.total_refunds, 1);
     assert_eq!(stats.total_refund_volume, 500);
@@ -1187,7 +1296,9 @@ fn test_cleanup_expired_payments() {
     client.set_payment_cleanup_period(&vec![&env, admin.clone()], &3600);
 
     // Both payments exist (one from setup_paid_order)
-    assert!(client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001")).is_ok());
+    assert!(client
+        .try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001"))
+        .is_ok());
 
     // Create another payment
     let order2 = PaymentOrder {
@@ -1203,7 +1314,9 @@ fn test_cleanup_expired_payments() {
     let sig = BytesN::from_array(&env, &[0u8; 64]);
     client.process_payment_with_signature(&payer, &order2, &sig, &pub_key);
 
-    assert!(client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_002")).is_ok());
+    assert!(client
+        .try_get_payment_by_id(&payer, &bytes(&env, "ORDER_002"))
+        .is_ok());
 
     // Fast forward 2h
     env.ledger().set_timestamp(7201);
@@ -1322,7 +1435,9 @@ fn test_cleanup_some_expired_only_removes_expired() {
         client.try_get_payment_by_id(&payer, &bytes(&env, "OLD_001")),
         Err(Ok(PaymentError::PaymentNotFound))
     );
-    assert!(client.try_get_payment_by_id(&payer, &bytes(&env, "NEW_001")).is_ok());
+    assert!(client
+        .try_get_payment_by_id(&payer, &bytes(&env, "NEW_001"))
+        .is_ok());
 }
 
 #[test]
@@ -1383,7 +1498,12 @@ fn setup_payer_history(
             expires_at: 0,
         };
         let (_pk, sig) = sign_order(env, &order);
-        client.process_payment_with_signature(&payer, &order, &sig, &BytesN::from_array(&env, &[0u8; 32]));
+        client.process_payment_with_signature(
+            &payer,
+            &order,
+            &sig,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
     }
 
     (admin, merchant, payer, token)
@@ -1431,8 +1551,7 @@ fn test_payer_history_single_payment() {
 #[test]
 fn test_payer_history_multiple_payments() {
     let (env, client) = setup();
-    let (_admin, _merchant, payer, _token) =
-        setup_payer_history(&env, &client, &[100, 200, 300]);
+    let (_admin, _merchant, payer, _token) = setup_payer_history(&env, &client, &[100, 200, 300]);
 
     let page = client.get_payer_payment_history(
         &payer,
@@ -1491,7 +1610,12 @@ fn test_payer_history_filter_date_range() {
         expires_at: 0,
     };
     let (_pk2, sig2) = sign_order(&env, &o2);
-    client.process_payment_with_signature(&payer, &o2, &sig2, &BytesN::from_array(&env, &[0u8; 32]));
+    client.process_payment_with_signature(
+        &payer,
+        &o2,
+        &sig2,
+        &BytesN::from_array(&env, &[0u8; 32]),
+    );
 
     use crate::types::{PaymentFilter, StatusFilter};
     let filter = PaymentFilter {
@@ -1517,8 +1641,7 @@ fn test_payer_history_filter_date_range() {
 #[test]
 fn test_payer_history_filter_amount_range() {
     let (env, client) = setup();
-    let (_admin, _merchant, payer, _token) =
-        setup_payer_history(&env, &client, &[50, 150, 500]);
+    let (_admin, _merchant, payer, _token) = setup_payer_history(&env, &client, &[50, 150, 500]);
 
     use crate::types::{PaymentFilter, StatusFilter};
     let filter = PaymentFilter {
@@ -1584,7 +1707,12 @@ fn test_payer_history_filter_by_token() {
         expires_at: 0,
     };
     let (_pk2, sig2) = sign_order(&env, &o2);
-    client.process_payment_with_signature(&payer, &o2, &sig2, &BytesN::from_array(&env, &[0u8; 32]));
+    client.process_payment_with_signature(
+        &payer,
+        &o2,
+        &sig2,
+        &BytesN::from_array(&env, &[0u8; 32]),
+    );
 
     use crate::types::{PaymentFilter, StatusFilter};
     let filter = PaymentFilter {
@@ -1610,8 +1738,7 @@ fn test_payer_history_filter_by_token() {
 #[test]
 fn test_payer_history_filter_by_status() {
     let (env, client) = setup();
-    let (_admin, merchant, payer, _token) =
-        setup_payer_history(&env, &client, &[300, 400]);
+    let (_admin, merchant, payer, _token) = setup_payer_history(&env, &client, &[300, 400]);
 
     // Initiate + approve + execute a partial refund on PAY_000
     client.initiate_refund(
@@ -1642,14 +1769,16 @@ fn test_payer_history_filter_by_status() {
         &SortOrder::Ascending,
     );
     assert_eq!(page.total, 1);
-    assert_eq!(page.records.get(0).unwrap().status, PaymentStatus::PartiallyRefunded);
+    assert_eq!(
+        page.records.get(0).unwrap().status,
+        PaymentStatus::PartiallyRefunded
+    );
 }
 
 #[test]
 fn test_payer_history_sort_by_amount_ascending() {
     let (env, client) = setup();
-    let (_admin, _merchant, payer, _token) =
-        setup_payer_history(&env, &client, &[300, 100, 200]);
+    let (_admin, _merchant, payer, _token) = setup_payer_history(&env, &client, &[300, 100, 200]);
 
     let page = client.get_payer_payment_history(
         &payer,
@@ -1666,8 +1795,7 @@ fn test_payer_history_sort_by_amount_ascending() {
 #[test]
 fn test_payer_history_sort_by_amount_descending() {
     let (env, client) = setup();
-    let (_admin, _merchant, payer, _token) =
-        setup_payer_history(&env, &client, &[300, 100, 200]);
+    let (_admin, _merchant, payer, _token) = setup_payer_history(&env, &client, &[300, 100, 200]);
 
     let page = client.get_payer_payment_history(
         &payer,
@@ -1713,7 +1841,12 @@ fn test_payer_history_sort_by_date_ascending() {
             expires_at: 0,
         };
         let (_pk, sig) = sign_order(&env, &order);
-        client.process_payment_with_signature(&payer, &order, &sig, &BytesN::from_array(&env, &[0u8; 32]));
+        client.process_payment_with_signature(
+            &payer,
+            &order,
+            &sig,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
     }
 
     let page = client.get_payer_payment_history(
@@ -1760,7 +1893,12 @@ fn test_payer_history_sort_by_date_descending() {
             expires_at: 0,
         };
         let (_pk, sig) = sign_order(&env, &order);
-        client.process_payment_with_signature(&payer, &order, &sig, &BytesN::from_array(&env, &[0u8; 32]));
+        client.process_payment_with_signature(
+            &payer,
+            &order,
+            &sig,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
     }
 
     let page = client.get_payer_payment_history(
