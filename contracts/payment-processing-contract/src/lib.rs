@@ -20,8 +20,9 @@ use soroban_sdk::{
 use error::PaymentError;
 use storage::REFUND_WINDOW;
 use types::{
-    DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
-    PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
+    DataKey, GlobalStats, MerchantStats, Merchant, MerchantCategory, MultisigPayment,
+    PaymentFilter, PaymentOrder, PaymentPage, PaymentRecord, PaymentStatus, RefundRecord,
+    RefundStatus, SortField, SortOrder,
 };
 
 #[contract]
@@ -210,7 +211,8 @@ impl PaymentContract {
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &payer, &order.order_id);
         storage::push_global_payment_id(&env, &order.order_id);
-        storage::increment_payment_stats(&env, order.amount);
+        storage::increment_payment_stats(&env, order.amount)?;
+        storage::increment_merchant_payment_stats(&env, &order.merchant_address, order.amount)?;
 
         // Commit payment state before the external token transfer to reduce
         // re-entrancy risk in external contracts.
@@ -339,6 +341,67 @@ impl PaymentContract {
                         .total_refund_volume
                         .checked_add(record.amount)
                         .ok_or(PaymentError::ArithmeticError)?;
+                }
+            }
+        }
+
+        Ok(stats)
+    }
+
+    pub fn get_merchant_stats(
+        env: Env,
+        merchant: Address,
+        date_start: Option<u64>,
+        date_end: Option<u64>,
+    ) -> Result<MerchantStats, PaymentError> {
+        // Merchant can query their own stats, or admin can query any merchant
+        let caller = env.invoker();
+        if caller != merchant {
+            helper::require_multi_admin(&env, vec![&env, caller])?;
+        }
+
+        // If no date filter, return cached stats
+        if date_start.is_none() && date_end.is_none() {
+            return Ok(storage::get_merchant_stats(&env, &merchant));
+        }
+
+        // Compute filtered stats by iterating merchant's payments
+        let mut stats = MerchantStats {
+            merchant_address: merchant.clone(),
+            total_payments: 0,
+            total_volume: 0,
+            total_refunds: 0,
+            total_refund_volume: 0,
+        };
+
+        let p_ids = storage::get_merchant_payment_ids(&env, &merchant);
+        for id in p_ids.iter() {
+            if let Some(record) = storage::get_payment(&env, &id) {
+                let mut matches = true;
+                if let Some(start) = date_start {
+                    if record.paid_at < start {
+                        matches = false;
+                    }
+                }
+                if let Some(end) = date_end {
+                    if record.paid_at > end {
+                        matches = false;
+                    }
+                }
+                if matches {
+                    stats.total_payments += 1;
+                    stats.total_volume = stats
+                        .total_volume
+                        .checked_add(record.amount)
+                        .ok_or(PaymentError::ArithmeticError)?;
+                    // Add refunded amount to refund stats
+                    if record.refunded_amount > 0 {
+                        stats.total_refunds += 1;
+                        stats.total_refund_volume = stats
+                            .total_refund_volume
+                            .checked_add(record.refunded_amount)
+                            .ok_or(PaymentError::ArithmeticError)?;
+                    }
                 }
             }
         }
@@ -596,6 +659,7 @@ impl PaymentContract {
         storage::save_refund(&env, &refund);
         storage::push_all_refund_id(&env, &refund_id);
         storage::increment_refund_stats(&env, refund.amount)?;
+        storage::increment_merchant_refund_stats(&env, &record.merchant_address, refund.amount)?;
 
         // Commit refund and payment state before the external token transfer to
         // reduce re-entrancy risk in external contracts.
