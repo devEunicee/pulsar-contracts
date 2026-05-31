@@ -11,6 +11,8 @@ mod types;
 mod test;
 #[cfg(test)]
 mod repro_tests;
+#[cfg(test)]
+mod prop_tests;
 
 use alloc::vec::Vec as RustVec;
 use soroban_sdk::{

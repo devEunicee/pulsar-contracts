@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  # Local Stellar network (Quickstart image runs Horizon + Core + Friendbot)
+  stellar-local:
+    image: stellar/quickstart:latest
+    container_name: pulsar-stellar-local
+    ports:
+      - "8000:8000"   # Horizon API
+      - "11625:11625" # Stellar Core peer port
+    environment:
+      - NETWORK=local
+    command: --local --enable-soroban-rpc
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # Development container with Rust + Stellar CLI pre-installed
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: pulsar-dev
+    volumes:
+      - .:/workspace
+      - cargo-cache:/usr/local/cargo/registry
+    environment:
+      - STELLAR_NETWORK_PASSPHRASE=Standalone Network ; February 2017
+      - STELLAR_RPC_URL=http://stellar-local:8000/soroban/rpc
+      - STELLAR_HORIZON_URL=http://stellar-local:8000
+    depends_on:
+      stellar-local:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+
+volumes:
+  cargo-cache:

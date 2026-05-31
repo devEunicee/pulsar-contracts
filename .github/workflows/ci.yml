@@ -32,6 +32,10 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
 
+      - name: Get rustc version
+        id: rustc-version
+        run: echo "version=$(rustc --version | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -39,8 +43,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.toolchain }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.toolchain }}-
+          key: ${{ runner.os }}-cargo-${{ matrix.toolchain }}-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.toolchain }}-${{ steps.rustc-version.outputs.version }}-
+            ${{ runner.os }}-cargo-${{ matrix.toolchain }}-
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -64,6 +70,10 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Get rustc version
+        id: rustc-version
+        run: echo "version=$(rustc --version | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -71,8 +81,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-wasm-
+          key: ${{ runner.os }}-cargo-wasm-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-${{ steps.rustc-version.outputs.version }}-
+            ${{ runner.os }}-cargo-wasm-
 
       - name: Build WASM
         run: cargo build --target wasm32-unknown-unknown --release --locked
@@ -98,6 +110,10 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Get rustc version
+        id: rustc-version
+        run: echo "version=$(rustc --version | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -105,8 +121,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-wasm-
+          key: ${{ runner.os }}-cargo-wasm-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-${{ steps.rustc-version.outputs.version }}-
+            ${{ runner.os }}-cargo-wasm-
 
       - name: Build WASM
         run: cargo build --target wasm32-unknown-unknown --release --locked
@@ -147,3 +165,37 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+
+  property-tests:
+    name: Property-Based Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+
+      - name: Get rustc version
+        id: rustc-version
+        run: echo "version=$(rustc --version | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-proptest-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-proptest-${{ steps.rustc-version.outputs.version }}-
+            ${{ runner.os }}-cargo-proptest-
+
+      - name: Run property-based tests
+        env:
+          PROPTEST_CASES: 512
+        run: cargo test prop_ --all-features --locked
+        working-directory: contracts/payment-processing-contract
