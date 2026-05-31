@@ -187,4 +187,5 @@ pub enum DataKey {
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
+    Paused,
 }
