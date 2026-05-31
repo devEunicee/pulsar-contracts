@@ -325,6 +325,19 @@ pub fn set_default_multisig_expiry(env: &Env, expiry: u64) {
         .set(&DataKey::DefaultMultisigExpiry, &expiry);
 }
 
+// ── Pause / emergency stop ────────────────────────────────────────────────────
+
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Paused)
+        .unwrap_or(false)
+}
+
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().instance().set(&DataKey::Paused, &paused);
+}
+
 // ── Global stats ──────────────────────────────────────────────────────────────
 
 pub fn get_global_stats(env: &Env) -> GlobalStats {
