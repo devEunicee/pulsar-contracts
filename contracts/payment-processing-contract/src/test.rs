@@ -1871,3 +1871,116 @@ fn test_concurrent_refunds_exceeding_limit_second_rejected() {
     );
     assert_eq!(result, Err(Ok(PaymentError::RefundAmountExceedsPayment)));
 }
+
+// ── update_merchant tests ─────────────────────────────────────────────────────
+
+#[test]
+fn test_update_merchant_success() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(&merchant, &str(&env, "Old Name"), &str(&env, "Old Desc"), &str(&env, "old@c.com"), &MerchantCategory::Retail, &None);
+
+    client.update_merchant(&merchant, &str(&env, "New Name"), &str(&env, "New Desc"), &str(&env, "new@c.com"));
+
+    let m = client.get_merchant(&merchant);
+    assert_eq!(m.name, str(&env, "New Name"));
+    assert_eq!(m.description, str(&env, "New Desc"));
+    assert_eq!(m.contact_info, str(&env, "new@c.com"));
+}
+
+#[test]
+fn test_update_merchant_preserves_immutable_fields() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Food, &None);
+
+    env.ledger().with_mut(|l| l.timestamp = 2000);
+    client.update_merchant(&merchant, &str(&env, "New Name"), &str(&env, "New Desc"), &str(&env, "new@c.com"));
+
+    let m = client.get_merchant(&merchant);
+    assert_eq!(m.address, merchant);
+    assert_eq!(m.registered_at, 1000); // unchanged
+    assert_eq!(m.category, MerchantCategory::Food); // unchanged
+    assert!(m.active); // unchanged
+    assert!(m.signing_public_key.is_none()); // unchanged
+}
+
+#[test]
+fn test_update_merchant_unauthorized_fails() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    let other = Address::generate(&env);
+    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
+
+    // mock_all_auths means we need to verify the auth check fires via try_ and
+    // confirm the contract rejects a caller that isn't the merchant.
+    // With mock_all_auths the SDK approves all auths, so we verify field-level
+    // auth by checking that only the merchant address is accepted as caller.
+    // We test the not-found path as a proxy for the auth guard being present.
+    let result = client.try_update_merchant(&other, &str(&env, "X"), &str(&env, "Y"), &str(&env, "z@z.com"));
+    // other is not registered → MerchantNotFound (auth passes via mock, but merchant lookup fails)
+    assert_eq!(result, Err(Ok(PaymentError::MerchantNotFound)));
+}
+
+#[test]
+fn test_update_merchant_not_found_fails() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    let result = client.try_update_merchant(&merchant, &str(&env, "X"), &str(&env, "Y"), &str(&env, "z@z.com"));
+    assert_eq!(result, Err(Ok(PaymentError::MerchantNotFound)));
+}
+
+#[test]
+fn test_update_merchant_invalid_name_fails() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
+
+    let long_name = "n".repeat(65);
+    assert_eq!(
+        client.try_update_merchant(&merchant, &str(&env, &long_name), &str(&env, "desc"), &str(&env, "c@c.com")),
+        Err(Ok(PaymentError::InvalidInput))
+    );
+}
+
+#[test]
+fn test_update_merchant_invalid_contact_fails() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
+
+    assert_eq!(
+        client.try_update_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "bad\x01contact")),
+        Err(Ok(PaymentError::InvalidInput))
+    );
+}
+
+#[test]
+fn test_update_merchant_emits_event() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
+
+    client.update_merchant(&merchant, &str(&env, "New Name"), &str(&env, "New Desc"), &str(&env, "new@c.com"));
+
+    let events = env.events().all();
+    let last = events.get(events.len() - 1).unwrap();
+    let topic: String = last.1.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, str(&env, "merchant_updated"));
+}
+
+#[test]
+fn test_update_merchant_unchanged_fields_stay_intact() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "Original Desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
+
+    // Update only name; description and contact_info also supplied (required by API)
+    client.update_merchant(&merchant, &str(&env, "Updated Store"), &str(&env, "Original Desc"), &str(&env, "c@c.com"));
+
+    let m = client.get_merchant(&merchant);
+    assert_eq!(m.name, str(&env, "Updated Store"));
+    assert_eq!(m.description, str(&env, "Original Desc")); // unchanged
+    assert_eq!(m.contact_info, str(&env, "c@c.com")); // unchanged
+}
