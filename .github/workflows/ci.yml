@@ -78,6 +78,25 @@ jobs:
         run: cargo build --target wasm32-unknown-unknown --release --locked
         working-directory: contracts/payment-processing-contract
 
+      - name: Check WASM binary size
+        run: |
+          WASM=target/wasm32-unknown-unknown/release/payment_processing_contract.wasm
+          SIZE=$(wc -c < "$WASM")
+          SIZE_KB=$(( SIZE / 1024 ))
+          echo "## WASM Size Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "| File | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| payment_processing_contract.wasm | ${SIZE_KB} KB (${SIZE} bytes) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "WASM size: ${SIZE_KB} KB (${SIZE} bytes)"
+          if [ "$SIZE" -gt 102400 ]; then
+            echo "::error::WASM binary exceeds 100 KB limit (${SIZE_KB} KB). Reduce contract size before merging."
+            exit 1
+          elif [ "$SIZE" -gt 81920 ]; then
+            echo "::warning::WASM binary is above 80 KB warning threshold (${SIZE_KB} KB). Consider reducing contract size."
+          else
+            echo "WASM size is within limits."
+          fi
+
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v4
         with:
