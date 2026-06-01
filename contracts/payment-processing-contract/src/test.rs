@@ -1871,3 +1871,65 @@ fn test_concurrent_refunds_exceeding_limit_second_rejected() {
     );
     assert_eq!(result, Err(Ok(PaymentError::RefundAmountExceedsPayment)));
 }
+
+// ── T-020: inactive merchant payment ─────────────────────────────────────────
+
+#[test]
+fn test_payment_with_inactive_merchant_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    // Deactivate the merchant
+    client.deactivate_merchant(&merchant, &None);
+    let m = client.get_merchant(&merchant);
+    assert!(!m.active);
+
+    // Attempt payment → must fail with MerchantInactive
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (pub_key, sig) = sign_order(&env, &order);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    assert_eq!(result, Err(Ok(PaymentError::MerchantInactive)));
+}
+
+// ── SEC-011: max pending refunds per order ────────────────────────────────────
+
+#[test]
+fn test_max_pending_refunds_per_order() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Initiate 10 refunds of 1 each (within the 1000 payment amount)
+    for i in 0..10u32 {
+        let refund_id = alloc::format!("RF_{:02}", i);
+        client.initiate_refund(
+            &payer,
+            &Bytes::from_slice(&env, refund_id.as_bytes()),
+            &bytes(&env, "ORDER_001"),
+            &1,
+            &str(&env, "reason"),
+        );
+    }
+
+    // 11th refund must be rejected with InvalidInput
+    let result = client.try_initiate_refund(
+        &payer,
+        &bytes(&env, "RF_10"),
+        &bytes(&env, "ORDER_001"),
+        &1,
+        &str(&env, "over limit"),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
