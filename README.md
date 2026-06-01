@@ -28,6 +28,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
   - [Admin Config](#admin-config)
 - [Events](#events)
 - [Error Codes](#error-codes)
+- [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -553,6 +554,12 @@ stellar network container restart local
 ```
 
 **Test failures** — check `soroban-sdk` version matches `22.0.0` in `Cargo.toml`.
+
+---
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned milestones: v0.1 (current), v0.2 (bug fixes & DX), and v1.0 (production-ready).
 
 ---
 
