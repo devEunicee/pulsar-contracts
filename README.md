@@ -356,6 +356,7 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
 ```
 
 ---
+> **Known Limitation:** The `date_start` and `date_end` parameters for `get_global_payment_stats` are currently a no‑op due to SC‑003. They will be functional once the issue is resolved.
 
 ### Refunds
 
