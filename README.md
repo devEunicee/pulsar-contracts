@@ -557,6 +557,22 @@ stellar network container restart local
 
 ---
 
+## Rate Limiting and Spam Prevention
+
+Pulsar is a Soroban smart contract on Stellar. Stellar's fee market provides natural, protocol-level rate limiting:
+
+- **Resource fees**: every contract invocation pays a fee proportional to the CPU instructions, memory, and storage it consumes. Spamming `process_payment` or `initiate_refund` from a single account rapidly drains that account's XLM balance.
+- **Surge pricing**: when the network is congested, base fees rise automatically, making bulk spam economically prohibitive.
+- **Sequence number enforcement**: each transaction must use the account's next sequence number, so parallel spam from a single account is serialised by the protocol.
+
+For applications that require stricter per-account throttling (e.g., preventing storage inflation from many small refund initiations), implement rate limiting in an **off-chain API gateway** in front of your contract invocation endpoint:
+
+```
+Client → API Gateway (rate limit: N req/min per account) → Stellar RPC → Contract
+```
+
+A simple token-bucket or sliding-window limiter keyed on the caller's Stellar address is sufficient. Libraries such as `express-rate-limit` (Node.js) or `slowapi` (Python) can be used for this purpose.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
