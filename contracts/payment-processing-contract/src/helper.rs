@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Bytes, BytesN, Env, String};
+use soroban_sdk::{Address, Bytes, BytesN, Env, String, Vec};
 
 use crate::error::PaymentError;
 use crate::storage;
@@ -137,8 +137,9 @@ pub fn matches_filter(record: &PaymentRecord, filter: &PaymentFilter) -> bool {
             return false;
         }
     }
-    if let Some(ref token) = filter.token {
-        if record.token != *token {
+    if let Some(ref tokens) = filter.tokens {
+        // Empty list → no filter (match all). Non-empty → token must be in list.
+        if !tokens.is_empty() && !tokens.contains(&record.token) {
             return false;
         }
     }
@@ -158,6 +159,44 @@ pub fn matches_filter(record: &PaymentRecord, filter: &PaymentFilter) -> bool {
             if record.status != PaymentStatus::FullyRefunded {
                 return false;
             }
+        }
+    }
+    true
+}
+
+/// Require that at least one address in `admins` matches the stored admin config.
+pub fn require_multi_admin(env: &Env, admins: Vec<Address>) -> Result<(), PaymentError> {
+    if let Some(config) = storage::get_admin_config(env) {
+        for addr in admins.iter() {
+            if config.admins.contains(&addr) {
+                addr.require_auth();
+                return Ok(());
+            }
+        }
+        return Err(PaymentError::Unauthorized);
+    }
+    // Fall back to single-admin mode.
+    if let Some(admin) = storage::get_admin(env) {
+        for addr in admins.iter() {
+            if addr == admin {
+                addr.require_auth();
+                return Ok(());
+            }
+        }
+    }
+    Err(PaymentError::Unauthorized)
+}
+
+/// Returns true if `ts` falls within the optional [start, end] range.
+pub fn in_date_range(ts: u64, start: Option<u64>, end: Option<u64>) -> bool {
+    if let Some(s) = start {
+        if ts < s {
+            return false;
+        }
+    }
+    if let Some(e) = end {
+        if ts > e {
+            return false;
         }
     }
     true

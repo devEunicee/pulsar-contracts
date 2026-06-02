@@ -66,6 +66,7 @@ every commit, catching formatting and lint issues locally before CI sees them.
 
 - **Formatting**: run `cargo fmt` before committing.
 - **Linting**: run `cargo clippy -- -D warnings`; fix all warnings.
+- **License headers**: all `.rs` files must start with `// SPDX-License-Identifier: MIT` (see [LICENSE_HEADERS.md](docs/LICENSE_HEADERS.md)).
 - **Tests**: every new function must have at least one unit test.
 - **No unsafe**: do not use `unsafe` blocks.
 - **No std**: the contract crate is `#![no_std]`; keep it that way.
@@ -94,6 +95,22 @@ Open a GitHub Issue with:
 - Steps to reproduce (for bugs).
 - Expected vs actual behaviour.
 - Rust / Stellar CLI version (`rustc --version`, `stellar --version`).
+
+## Issue Triage
+
+**Label taxonomy**
+
+- `bug` – a defect in the code or documentation.
+- `enhancement` – a new feature or improvement.
+- `security` – security‑related issue.
+- `documentation` – docs improvements or corrections.
+- `question` – user questions or usage help.
+
+**SLA for first response**
+
+- All new issues receive an initial acknowledgement within **24 hours** on weekdays.
+- Critical security issues are responded to within **4 hours**.
+- Non‑critical issues aim for a response within **48 hours**.
 
 ## Security Vulnerabilities
 
