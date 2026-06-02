@@ -1613,3 +1613,71 @@ fn test_get_merchant_stats_multiple_merchants() {
     assert_eq!(stats2.total_payments, 1);
     assert_eq!(stats2.total_volume, 2000);
 }
+
+// ── T-010: Zero and negative amount tests for process_payment_with_signature ──
+
+#[test]
+fn test_payment_zero_amount_fails() {
+    // T-010: amount = 0 must return InvalidAmount
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let mut order = make_order(&env, &merchant, &payer, &token);
+    order.amount = 0;
+    let (pub_key, sig) = sign_order(&env, &order);
+
+    let result = client.try_process_payment_with_signature(
+        &payer,
+        &order,
+        &sig,
+        &BytesN::from_array(&env, &[0u8; 32]),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidAmount)));
+}
+
+#[test]
+fn test_payment_negative_amount_fails() {
+    // T-010: amount = -1 must return InvalidAmount
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let mut order = make_order(&env, &merchant, &payer, &token);
+    order.amount = -1;
+    let (pub_key, sig) = sign_order(&env, &order);
+
+    let result = client.try_process_payment_with_signature(
+        &payer,
+        &order,
+        &sig,
+        &BytesN::from_array(&env, &[0u8; 32]),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidAmount)));
+}

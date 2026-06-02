@@ -27,6 +27,41 @@ cargo test
 cargo build --target wasm32-unknown-unknown --release
 ```
 
+## Pre-commit Hooks (DO-013)
+
+A `.pre-commit-config.yaml` is provided at the repository root. It runs
+`cargo fmt --check` and `cargo clippy -- -D warnings` automatically before
+every commit, catching formatting and lint issues locally before CI sees them.
+
+### Installation
+
+1. Install [pre-commit](https://pre-commit.com/#install):
+
+   ```bash
+   pip install pre-commit
+   # or via Homebrew
+   brew install pre-commit
+   ```
+
+2. Install the hooks into your local clone (one-time setup):
+
+   ```bash
+   pre-commit install
+   ```
+
+3. The hooks now run automatically on every `git commit`. To run them manually
+   against all files at any time:
+
+   ```bash
+   pre-commit run --all-files
+   ```
+
+> **Note:** The hooks require a working Rust toolchain with `rustfmt` and
+> `clippy` components. Install them with:
+> ```bash
+> rustup component add rustfmt clippy
+> ```
+
 ## Code Standards
 
 - **Formatting**: run `cargo fmt` before committing.
