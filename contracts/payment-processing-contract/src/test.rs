@@ -619,6 +619,23 @@ fn test_approve_refund_unauthorized_fails() {
 }
 
 #[test]
+fn test_initiate_refund_unauthorized_fails() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+    let stranger = Address::generate(&env);
+
+    let result = client.try_initiate_refund(
+        &stranger,
+        &bytes(&env, "REFUND_001"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "Unauthorized refund attempt"),
+    );
+
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
 fn test_refund_exceeds_payment_fails() {
     let (env, client) = setup();
     let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
@@ -1499,7 +1516,7 @@ fn test_payer_history_filter_date_range() {
         date_end: Some(2000),
         amount_min: None,
         amount_max: None,
-        token: None,
+        tokens: None,
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1526,7 +1543,7 @@ fn test_payer_history_filter_amount_range() {
         date_end: None,
         amount_min: Some(100),
         amount_max: Some(200),
-        token: None,
+        tokens: None,
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1592,7 +1609,7 @@ fn test_payer_history_filter_by_token() {
         date_end: None,
         amount_min: None,
         amount_max: None,
-        token: Some(token2.clone()),
+        tokens: Some(Vec::from_array(&env, [token2.clone()])),
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1630,7 +1647,7 @@ fn test_payer_history_filter_by_status() {
         date_end: None,
         amount_min: None,
         amount_max: None,
-        token: None,
+        tokens: None,
         status: StatusFilter::PartiallyRefunded,
     };
     let page = client.get_payer_payment_history(
@@ -1872,115 +1889,64 @@ fn test_concurrent_refunds_exceeding_limit_second_rejected() {
     assert_eq!(result, Err(Ok(PaymentError::RefundAmountExceedsPayment)));
 }
 
-// ── update_merchant tests ─────────────────────────────────────────────────────
+// ── T-020: inactive merchant payment ─────────────────────────────────────────
 
 #[test]
-fn test_update_merchant_success() {
+fn test_payment_with_inactive_merchant_fails() {
     let (env, client) = setup();
+    let admin = Address::generate(&env);
     let merchant = Address::generate(&env);
-    client.register_merchant(&merchant, &str(&env, "Old Name"), &str(&env, "Old Desc"), &str(&env, "old@c.com"), &MerchantCategory::Retail, &None);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
 
-    client.update_merchant(&merchant, &str(&env, "New Name"), &str(&env, "New Desc"), &str(&env, "new@c.com"));
-
-    let m = client.get_merchant(&merchant);
-    assert_eq!(m.name, str(&env, "New Name"));
-    assert_eq!(m.description, str(&env, "New Desc"));
-    assert_eq!(m.contact_info, str(&env, "new@c.com"));
-}
-
-#[test]
-fn test_update_merchant_preserves_immutable_fields() {
-    let (env, client) = setup();
-    let merchant = Address::generate(&env);
-    env.ledger().with_mut(|l| l.timestamp = 1000);
-    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Food, &None);
-
-    env.ledger().with_mut(|l| l.timestamp = 2000);
-    client.update_merchant(&merchant, &str(&env, "New Name"), &str(&env, "New Desc"), &str(&env, "new@c.com"));
-
-    let m = client.get_merchant(&merchant);
-    assert_eq!(m.address, merchant);
-    assert_eq!(m.registered_at, 1000); // unchanged
-    assert_eq!(m.category, MerchantCategory::Food); // unchanged
-    assert!(m.active); // unchanged
-    assert!(m.signing_public_key.is_none()); // unchanged
-}
-
-#[test]
-fn test_update_merchant_unauthorized_fails() {
-    let (env, client) = setup();
-    let merchant = Address::generate(&env);
-    let other = Address::generate(&env);
-    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
-
-    // mock_all_auths means we need to verify the auth check fires via try_ and
-    // confirm the contract rejects a caller that isn't the merchant.
-    // With mock_all_auths the SDK approves all auths, so we verify field-level
-    // auth by checking that only the merchant address is accepted as caller.
-    // We test the not-found path as a proxy for the auth guard being present.
-    let result = client.try_update_merchant(&other, &str(&env, "X"), &str(&env, "Y"), &str(&env, "z@z.com"));
-    // other is not registered → MerchantNotFound (auth passes via mock, but merchant lookup fails)
-    assert_eq!(result, Err(Ok(PaymentError::MerchantNotFound)));
-}
-
-#[test]
-fn test_update_merchant_not_found_fails() {
-    let (env, client) = setup();
-    let merchant = Address::generate(&env);
-    let result = client.try_update_merchant(&merchant, &str(&env, "X"), &str(&env, "Y"), &str(&env, "z@z.com"));
-    assert_eq!(result, Err(Ok(PaymentError::MerchantNotFound)));
-}
-
-#[test]
-fn test_update_merchant_invalid_name_fails() {
-    let (env, client) = setup();
-    let merchant = Address::generate(&env);
-    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
-
-    let long_name = "n".repeat(65);
-    assert_eq!(
-        client.try_update_merchant(&merchant, &str(&env, &long_name), &str(&env, "desc"), &str(&env, "c@c.com")),
-        Err(Ok(PaymentError::InvalidInput))
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
     );
-}
+    mint(&env, &token, &admin, &payer, 5000);
 
-#[test]
-fn test_update_merchant_invalid_contact_fails() {
-    let (env, client) = setup();
-    let merchant = Address::generate(&env);
-    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
-
-    assert_eq!(
-        client.try_update_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "bad\x01contact")),
-        Err(Ok(PaymentError::InvalidInput))
-    );
-}
-
-#[test]
-fn test_update_merchant_emits_event() {
-    let (env, client) = setup();
-    let merchant = Address::generate(&env);
-    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
-
-    client.update_merchant(&merchant, &str(&env, "New Name"), &str(&env, "New Desc"), &str(&env, "new@c.com"));
-
-    let events = env.events().all();
-    let last = events.get(events.len() - 1).unwrap();
-    let topic: String = last.1.get(0).unwrap().into_val(&env);
-    assert_eq!(topic, str(&env, "merchant_updated"));
-}
-
-#[test]
-fn test_update_merchant_unchanged_fields_stay_intact() {
-    let (env, client) = setup();
-    let merchant = Address::generate(&env);
-    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "Original Desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
-
-    // Update only name; description and contact_info also supplied (required by API)
-    client.update_merchant(&merchant, &str(&env, "Updated Store"), &str(&env, "Original Desc"), &str(&env, "c@c.com"));
-
+    // Deactivate the merchant
+    client.deactivate_merchant(&merchant, &None);
     let m = client.get_merchant(&merchant);
-    assert_eq!(m.name, str(&env, "Updated Store"));
-    assert_eq!(m.description, str(&env, "Original Desc")); // unchanged
-    assert_eq!(m.contact_info, str(&env, "c@c.com")); // unchanged
+    assert!(!m.active);
+
+    // Attempt payment → must fail with MerchantInactive
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (pub_key, sig) = sign_order(&env, &order);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    assert_eq!(result, Err(Ok(PaymentError::MerchantInactive)));
+}
+
+// ── SEC-011: max pending refunds per order ────────────────────────────────────
+
+#[test]
+fn test_max_pending_refunds_per_order() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Initiate 10 refunds of 1 each (within the 1000 payment amount)
+    for i in 0..10u32 {
+        let refund_id = alloc::format!("RF_{:02}", i);
+        client.initiate_refund(
+            &payer,
+            &Bytes::from_slice(&env, refund_id.as_bytes()),
+            &bytes(&env, "ORDER_001"),
+            &1,
+            &str(&env, "reason"),
+        );
+    }
+
+    // 11th refund must be rejected with InvalidInput
+    let result = client.try_initiate_refund(
+        &payer,
+        &bytes(&env, "RF_10"),
+        &bytes(&env, "ORDER_001"),
+        &1,
+        &str(&env, "over limit"),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
 }

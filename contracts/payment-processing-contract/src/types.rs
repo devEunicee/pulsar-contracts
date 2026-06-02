@@ -105,7 +105,7 @@ pub struct MultisigPayment {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SortField {
     Date,
-    Amount,
+    Amount, // .
 }
 
 #[contracttype]
@@ -131,7 +131,9 @@ pub struct PaymentFilter {
     pub date_end: Option<u64>,
     pub amount_min: Option<i128>,
     pub amount_max: Option<i128>,
-    pub token: Option<Address>,
+    /// Filter by one or more token contract addresses. `None` matches all tokens.
+    /// An empty list also matches all tokens (treated as no filter).
+    pub tokens: Option<Vec<Address>>,
     pub status: StatusFilter,
 }
 
@@ -187,4 +189,5 @@ pub enum DataKey {
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
+    OrderRefundCount(Bytes),
 }
