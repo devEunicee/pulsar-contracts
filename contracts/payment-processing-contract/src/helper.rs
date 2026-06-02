@@ -137,8 +137,9 @@ pub fn matches_filter(record: &PaymentRecord, filter: &PaymentFilter) -> bool {
             return false;
         }
     }
-    if let Some(ref token) = filter.token {
-        if record.token != *token {
+    if let Some(ref tokens) = filter.tokens {
+        // Empty list → no filter (match all). Non-empty → token must be in list.
+        if !tokens.is_empty() && !tokens.contains(&record.token) {
             return false;
         }
     }

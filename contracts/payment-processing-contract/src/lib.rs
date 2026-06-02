@@ -151,6 +151,31 @@ impl PaymentContract {
         storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)
     }
 
+    /// Update mutable profile fields of an existing merchant.
+    /// Only the merchant themselves may call this.
+    /// Immutable fields (address, registered_at, signing_public_key, active) are preserved.
+    pub fn update_merchant(
+        env: Env,
+        merchant_address: Address,
+        name: String,
+        description: String,
+        contact_info: String,
+    ) -> Result<(), PaymentError> {
+        merchant_address.require_auth();
+        helper::validate_merchant_fields(&name, &description, &contact_info)?;
+        let mut merchant =
+            storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)?;
+        merchant.name = name.clone();
+        merchant.description = description.clone();
+        merchant.contact_info = contact_info.clone();
+        storage::save_merchant(&env, &merchant);
+        env.events().publish(
+            (String::from_str(&env, "merchant_updated"),),
+            (merchant_address, name, description, contact_info),
+        );
+        Ok(())
+    }
+
     // ── Payment processing ────────────────────────────────────────────────────
 
     /// Process a payment with an ed25519 signature over the serialised order.
@@ -470,6 +495,10 @@ impl PaymentContract {
             return Err(PaymentError::RefundAlreadyExists);
         }
 
+        if storage::get_order_refund_count(&env, &order_id) >= storage::MAX_PENDING_REFUNDS {
+            return Err(PaymentError::InvalidInput);
+        }
+
         let refund = RefundRecord {
             refund_id: refund_id.clone(),
             order_id: order_id.clone(),
@@ -481,6 +510,7 @@ impl PaymentContract {
             dispute_reason: String::from_str(&env, ""),
         };
         storage::save_refund(&env, &refund);
+        storage::increment_order_refund_count(&env, &order_id);
 
         record.pending_refund_amount += amount;
         storage::save_payment(&env, &record);
@@ -564,6 +594,7 @@ impl PaymentContract {
             .ok_or(PaymentError::PaymentNotFound)?;
         record.pending_refund_amount = record.pending_refund_amount.saturating_sub(refund.amount);
         storage::save_payment(&env, &record);
+        storage::decrement_order_refund_count(&env, &refund.order_id);
 
         env.events().publish(
             (String::from_str(&env, "refund_rejected"),),
@@ -601,6 +632,7 @@ impl PaymentContract {
         refund.status = RefundStatus::Completed;
         storage::save_refund(&env, &refund);
         storage::push_all_refund_id(&env, &refund_id);
+        storage::decrement_order_refund_count(&env, &refund.order_id);
         storage::increment_refund_stats(&env, refund.amount)?;
 
         // Commit refund and payment state before the external token transfer to

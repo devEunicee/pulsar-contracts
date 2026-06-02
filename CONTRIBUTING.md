@@ -60,6 +60,22 @@ Open a GitHub Issue with:
 - Expected vs actual behaviour.
 - Rust / Stellar CLI version (`rustc --version`, `stellar --version`).
 
+## Issue Triage
+
+**Label taxonomy**
+
+- `bug` – a defect in the code or documentation.
+- `enhancement` – a new feature or improvement.
+- `security` – security‑related issue.
+- `documentation` – docs improvements or corrections.
+- `question` – user questions or usage help.
+
+**SLA for first response**
+
+- All new issues receive an initial acknowledgement within **24 hours** on weekdays.
+- Critical security issues are responded to within **4 hours**.
+- Non‑critical issues aim for a response within **48 hours**.
+
 ## Security Vulnerabilities
 
 Do **not** open a public issue for security vulnerabilities. Email the maintainers directly or use GitHub's private security advisory feature.

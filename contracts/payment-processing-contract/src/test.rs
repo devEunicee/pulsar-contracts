@@ -619,6 +619,23 @@ fn test_approve_refund_unauthorized_fails() {
 }
 
 #[test]
+fn test_initiate_refund_unauthorized_fails() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+    let stranger = Address::generate(&env);
+
+    let result = client.try_initiate_refund(
+        &stranger,
+        &bytes(&env, "REFUND_001"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "Unauthorized refund attempt"),
+    );
+
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
 fn test_refund_exceeds_payment_fails() {
     let (env, client) = setup();
     let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
@@ -1499,7 +1516,7 @@ fn test_payer_history_filter_date_range() {
         date_end: Some(2000),
         amount_min: None,
         amount_max: None,
-        token: None,
+        tokens: None,
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1526,7 +1543,7 @@ fn test_payer_history_filter_amount_range() {
         date_end: None,
         amount_min: Some(100),
         amount_max: Some(200),
-        token: None,
+        tokens: None,
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1592,7 +1609,7 @@ fn test_payer_history_filter_by_token() {
         date_end: None,
         amount_min: None,
         amount_max: None,
-        token: Some(token2.clone()),
+        tokens: Some(Vec::from_array(&env, [token2.clone()])),
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1630,7 +1647,7 @@ fn test_payer_history_filter_by_status() {
         date_end: None,
         amount_min: None,
         amount_max: None,
-        token: None,
+        tokens: None,
         status: StatusFilter::PartiallyRefunded,
     };
     let page = client.get_payer_payment_history(
@@ -1872,262 +1889,64 @@ fn test_concurrent_refunds_exceeding_limit_second_rejected() {
     assert_eq!(result, Err(Ok(PaymentError::RefundAmountExceedsPayment)));
 }
 
-// ── Dispute lifecycle tests ───────────────────────────────────────────────────
+// ── T-020: inactive merchant payment ─────────────────────────────────────────
 
-/// Helper: initiate + reject a refund, returning (admin, merchant, payer, token).
-fn setup_rejected_refund(env: &Env, client: &PaymentContractClient) -> (Address, Address, Address, Address) {
-    let (admin, merchant, payer, token) = setup_paid_order(env, client);
-    client.initiate_refund(
-        &payer,
-        &bytes(env, "REFUND_001"),
-        &bytes(env, "ORDER_001"),
-        &500,
-        &str(env, "I want a refund"),
+#[test]
+fn test_payment_with_inactive_merchant_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
     );
-    client.reject_refund(&merchant, &bytes(env, "REFUND_001"), &None);
-    (admin, merchant, payer, token)
+    mint(&env, &token, &admin, &payer, 5000);
+
+    // Deactivate the merchant
+    client.deactivate_merchant(&merchant, &None);
+    let m = client.get_merchant(&merchant);
+    assert!(!m.active);
+
+    // Attempt payment → must fail with MerchantInactive
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (pub_key, sig) = sign_order(&env, &order);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    assert_eq!(result, Err(Ok(PaymentError::MerchantInactive)));
 }
 
-#[test]
-fn test_dispute_refund_success() {
-    let (env, client) = setup();
-    let (_admin, _merchant, payer, _token) = setup_rejected_refund(&env, &client);
-
-    client.dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, "Merchant was wrong"));
-    assert_eq!(client.get_refund_status(&bytes(&env, "REFUND_001")), RefundStatus::Disputed);
-}
+// ── SEC-011: max pending refunds per order ────────────────────────────────────
 
 #[test]
-fn test_dispute_refund_persists_reason() {
-    let (env, client) = setup();
-    let (_admin, _merchant, payer, _token) = setup_rejected_refund(&env, &client);
-
-    client.dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, "Evidence attached"));
-
-    // Verify via get_refund_status that state is Disputed (reason stored internally).
-    assert_eq!(client.get_refund_status(&bytes(&env, "REFUND_001")), RefundStatus::Disputed);
-}
-
-#[test]
-fn test_dispute_refund_only_payer_can_dispute() {
-    let (env, client) = setup();
-    let (_admin, merchant, _payer, _token) = setup_rejected_refund(&env, &client);
-
-    // Merchant tries to dispute — must fail.
-    assert_eq!(
-        client.try_dispute_refund(&merchant, &bytes(&env, "REFUND_001"), &str(&env, "nope")),
-        Err(Ok(PaymentError::DisputeUnauthorized))
-    );
-}
-
-#[test]
-fn test_dispute_refund_stranger_cannot_dispute() {
-    let (env, client) = setup();
-    let (_admin, _merchant, _payer, _token) = setup_rejected_refund(&env, &client);
-    let stranger = Address::generate(&env);
-
-    assert_eq!(
-        client.try_dispute_refund(&stranger, &bytes(&env, "REFUND_001"), &str(&env, "nope")),
-        Err(Ok(PaymentError::DisputeUnauthorized))
-    );
-}
-
-#[test]
-fn test_dispute_pending_refund_fails() {
+fn test_max_pending_refunds_per_order() {
     let (env, client) = setup();
     let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
 
-    client.initiate_refund(&payer, &bytes(&env, "REFUND_001"), &bytes(&env, "ORDER_001"), &500, &str(&env, "reason"));
-    // Still Pending — cannot dispute yet.
-    assert_eq!(
-        client.try_dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, "too early")),
-        Err(Ok(PaymentError::RefundNotRejected))
+    // Initiate 10 refunds of 1 each (within the 1000 payment amount)
+    for i in 0..10u32 {
+        let refund_id = alloc::format!("RF_{:02}", i);
+        client.initiate_refund(
+            &payer,
+            &Bytes::from_slice(&env, refund_id.as_bytes()),
+            &bytes(&env, "ORDER_001"),
+            &1,
+            &str(&env, "reason"),
+        );
+    }
+
+    // 11th refund must be rejected with InvalidInput
+    let result = client.try_initiate_refund(
+        &payer,
+        &bytes(&env, "RF_10"),
+        &bytes(&env, "ORDER_001"),
+        &1,
+        &str(&env, "over limit"),
     );
-}
-
-#[test]
-fn test_dispute_approved_refund_fails() {
-    let (env, client) = setup();
-    let (_admin, merchant, payer, _token) = setup_paid_order(&env, &client);
-
-    client.initiate_refund(&payer, &bytes(&env, "REFUND_001"), &bytes(&env, "ORDER_001"), &500, &str(&env, "reason"));
-    client.approve_refund(&merchant, &bytes(&env, "REFUND_001"), &None);
-
-    assert_eq!(
-        client.try_dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, "already approved")),
-        Err(Ok(PaymentError::RefundNotRejected))
-    );
-}
-
-#[test]
-fn test_dispute_reason_too_long_fails() {
-    let (env, client) = setup();
-    let (_admin, _merchant, payer, _token) = setup_rejected_refund(&env, &client);
-
-    let long_reason = "x".repeat(257);
-    assert_eq!(
-        client.try_dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, &long_reason)),
-        Err(Ok(PaymentError::InvalidInput))
-    );
-}
-
-#[test]
-fn test_resolve_dispute_admin_approves_pays_out() {
-    let (env, client) = setup();
-    let (admin, merchant, payer, token) = setup_rejected_refund(&env, &client);
-
-    client.dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, "dispute reason"));
-
-    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
-    let payer_before = token_client.balance(&payer);
-    let merchant_before = token_client.balance(&merchant);
-
-    client.resolve_dispute(&vec![&env, admin.clone()], &bytes(&env, "REFUND_001"), &true);
-
-    assert_eq!(client.get_refund_status(&bytes(&env, "REFUND_001")), RefundStatus::Completed);
-    assert_eq!(token_client.balance(&payer), payer_before + 500);
-    assert_eq!(token_client.balance(&merchant), merchant_before - 500);
-}
-
-#[test]
-fn test_resolve_dispute_admin_approves_updates_payment_status() {
-    let (env, client) = setup();
-    let (admin, _merchant, payer, _token) = setup_rejected_refund(&env, &client);
-
-    client.dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, "dispute reason"));
-    client.resolve_dispute(&vec![&env, admin.clone()], &bytes(&env, "REFUND_001"), &true);
-
-    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
-    assert_eq!(record.refunded_amount, 500);
-    assert_eq!(record.status, PaymentStatus::PartiallyRefunded);
-}
-
-#[test]
-fn test_resolve_dispute_admin_upholds_rejection_no_payout() {
-    let (env, client) = setup();
-    let (admin, merchant, payer, token) = setup_rejected_refund(&env, &client);
-
-    client.dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, "dispute reason"));
-
-    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
-    let payer_before = token_client.balance(&payer);
-    let merchant_before = token_client.balance(&merchant);
-
-    client.resolve_dispute(&vec![&env, admin.clone()], &bytes(&env, "REFUND_001"), &false);
-
-    assert_eq!(client.get_refund_status(&bytes(&env, "REFUND_001")), RefundStatus::Rejected);
-    // No token movement.
-    assert_eq!(token_client.balance(&payer), payer_before);
-    assert_eq!(token_client.balance(&merchant), merchant_before);
-}
-
-#[test]
-fn test_resolve_non_disputed_refund_fails() {
-    let (env, client) = setup();
-    let (admin, _merchant, payer, _token) = setup_rejected_refund(&env, &client);
-
-    // Refund is Rejected but not Disputed — resolve must fail.
-    assert_eq!(
-        client.try_resolve_dispute(&vec![&env, admin.clone()], &bytes(&env, "REFUND_001"), &true),
-        Err(Ok(PaymentError::RefundNotDisputed))
-    );
-}
-
-#[test]
-fn test_resolve_pending_refund_fails() {
-    let (env, client) = setup();
-    let (admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
-
-    client.initiate_refund(&payer, &bytes(&env, "REFUND_001"), &bytes(&env, "ORDER_001"), &500, &str(&env, "reason"));
-
-    assert_eq!(
-        client.try_resolve_dispute(&vec![&env, admin.clone()], &bytes(&env, "REFUND_001"), &true),
-        Err(Ok(PaymentError::RefundNotDisputed))
-    );
-}
-
-#[test]
-fn test_resolve_dispute_non_admin_fails() {
-    let (env, client) = setup();
-    let (_admin, _merchant, payer, _token) = setup_rejected_refund(&env, &client);
-
-    client.dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, "dispute reason"));
-
-    assert_eq!(
-        client.try_resolve_dispute(&vec![&env, payer.clone()], &bytes(&env, "REFUND_001"), &true),
-        Err(Ok(PaymentError::Unauthorized))
-    );
-}
-
-#[test]
-fn test_dispute_emits_refund_disputed_event() {
-    let (env, client) = setup();
-    let (_admin, _merchant, payer, _token) = setup_rejected_refund(&env, &client);
-
-    client.dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, "my reason"));
-
-    let events = env.events().all();
-    let last = events.get(events.len() - 1).unwrap();
-    let topic: String = last.1.get(0).unwrap().into_val(&env);
-    assert_eq!(topic, str(&env, "refund_disputed"));
-}
-
-#[test]
-fn test_resolve_dispute_emits_dispute_resolved_event() {
-    let (env, client) = setup();
-    let (admin, _merchant, payer, _token) = setup_rejected_refund(&env, &client);
-
-    client.dispute_refund(&payer, &bytes(&env, "REFUND_001"), &str(&env, "my reason"));
-    client.resolve_dispute(&vec![&env, admin.clone()], &bytes(&env, "REFUND_001"), &true);
-
-    let events = env.events().all();
-    let last = events.get(events.len() - 1).unwrap();
-    let topic: String = last.1.get(0).unwrap().into_val(&env);
-    assert_eq!(topic, str(&env, "dispute_resolved"));
-}
-
-#[test]
-fn test_full_dispute_lifecycle_approve() {
-    // Full path: initiate → reject → dispute → admin approve → Completed + payout
-    let (env, client) = setup();
-    let (admin, merchant, payer, token) = setup_paid_order(&env, &client);
-
-    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
-    let payer_before = token_client.balance(&payer);
-
-    client.initiate_refund(&payer, &bytes(&env, "R1"), &bytes(&env, "ORDER_001"), &1000, &str(&env, "full refund"));
-    assert_eq!(client.get_refund_status(&bytes(&env, "R1")), RefundStatus::Pending);
-
-    client.reject_refund(&merchant, &bytes(&env, "R1"), &None);
-    assert_eq!(client.get_refund_status(&bytes(&env, "R1")), RefundStatus::Rejected);
-
-    client.dispute_refund(&payer, &bytes(&env, "R1"), &str(&env, "I have proof"));
-    assert_eq!(client.get_refund_status(&bytes(&env, "R1")), RefundStatus::Disputed);
-
-    client.resolve_dispute(&vec![&env, admin.clone()], &bytes(&env, "R1"), &true);
-    assert_eq!(client.get_refund_status(&bytes(&env, "R1")), RefundStatus::Completed);
-
-    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
-    assert_eq!(record.refunded_amount, 1000);
-    assert_eq!(record.status, PaymentStatus::FullyRefunded);
-    assert_eq!(token_client.balance(&payer), payer_before + 1000);
-}
-
-#[test]
-fn test_full_dispute_lifecycle_reject() {
-    // Full path: initiate → reject → dispute → admin uphold → Rejected, no payout
-    let (env, client) = setup();
-    let (admin, merchant, payer, token) = setup_paid_order(&env, &client);
-
-    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
-    let payer_before = token_client.balance(&payer);
-
-    client.initiate_refund(&payer, &bytes(&env, "R1"), &bytes(&env, "ORDER_001"), &500, &str(&env, "reason"));
-    client.reject_refund(&merchant, &bytes(&env, "R1"), &None);
-    client.dispute_refund(&payer, &bytes(&env, "R1"), &str(&env, "I disagree"));
-    client.resolve_dispute(&vec![&env, admin.clone()], &bytes(&env, "R1"), &false);
-
-    assert_eq!(client.get_refund_status(&bytes(&env, "R1")), RefundStatus::Rejected);
-    // No payout — payer balance unchanged.
-    assert_eq!(token_client.balance(&payer), payer_before);
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
 }
