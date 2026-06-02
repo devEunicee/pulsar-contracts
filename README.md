@@ -103,10 +103,17 @@ pulsar-contracts/
 
 ## Setup
 
+Clone the repository and run the automated setup script to install all prerequisites (Rust, WASM target, Stellar CLI):
+
 ```bash
 git clone https://github.com/devEunicee/pulsar-contracts.git
 cd pulsar-contracts
+bash scripts/setup.sh
 ```
+
+The script is idempotent — safe to run multiple times. It detects what is already installed and skips those steps. Supported on **Ubuntu 20.04+** and **macOS 12+**.
+
+> **Manual setup** — if you prefer to install tools yourself, see the [Prerequisites](#prerequisites) section above.
 
 ---
 
@@ -694,17 +701,91 @@ Soroban persistent storage entries expire after a ledger TTL. Without active ren
 
 ## Troubleshooting
 
-**Build errors** — ensure the WASM target is installed:
+### 1. Build fails — `error[E0463]: can't find crate for 'std'`
+
+**Symptom:** `cargo build --target wasm32-unknown-unknown` fails with a missing `std` crate error.  
+**Cause:** The `wasm32-unknown-unknown` target is not installed for the active Rust toolchain.  
+**Fix:**
 ```bash
 rustup target add wasm32-unknown-unknown
 ```
 
-**Local network fails** — restart Docker and the container:
+---
+
+### 2. Local network fails to start
+
+**Symptom:** `stellar network container start local` hangs or returns a connection error.  
+**Cause:** Docker Desktop is not running, or the container is in a bad state.  
+**Fix:**
 ```bash
+# Ensure Docker Desktop is running, then:
 stellar network container restart local
 ```
+If the container is corrupted, remove it and start fresh:
+```bash
+docker rm -f stellar-local 2>/dev/null || true
+stellar network container start local
+```
 
-**Test failures** — check `soroban-sdk` version matches `22.0.0` in `Cargo.toml`.
+---
+
+### 3. Test failures — mock auth / `require_auth` panics
+
+**Symptom:** Tests panic with `HostError: Error(Auth, InvalidAction)` or similar auth errors.  
+**Cause:** The test environment requires explicit mock authorisation for every address that calls `require_auth()`. A missing `env.mock_all_auths()` or `env.mock_auths(...)` call causes the panic.  
+**Fix:** Add `env.mock_all_auths()` at the top of the test, or use `env.mock_auths(&[...])` to authorise specific calls:
+```rust
+let env = Env::default();
+env.mock_all_auths(); // ← add this before any contract calls
+```
+
+---
+
+### 4. Test failures — token minting / balance errors
+
+**Symptom:** Tests fail with `HostError: Error(Contract, #10)` or an assertion on token balances fails unexpectedly.  
+**Cause:** The test token contract was not minted with enough balance for the payer, or the wrong address was used as the token admin when calling `mint`.  
+**Fix:** Ensure the token is minted to the correct address and the amount covers the payment plus any fees:
+```rust
+token_admin_client.mint(&payer, &10_000_i128); // mint before process_payment_with_signature
+```
+Also confirm the token address passed to the contract matches the one created in the test setup.
+
+---
+
+### 5. Test failures — snapshot mismatch (`insta` / `expect_test`)
+
+**Symptom:** A test fails with `snapshot assertion failed` and shows a diff between stored and actual output.  
+**Cause:** Contract output or error messages changed since the snapshot was last recorded.  
+**Fix:** Review the diff to confirm the change is intentional, then update the snapshot:
+```bash
+cargo test -- --nocapture   # inspect the actual output first
+# If the change is correct, update snapshots:
+INSTA_UPDATE=always cargo test
+# or for expect-test:
+UPDATE_EXPECT=1 cargo test
+```
+Commit the updated snapshot files alongside your code change.
+
+---
+
+### 6. `soroban-sdk` version mismatch
+
+**Symptom:** Compilation errors referencing missing trait implementations or changed API signatures.  
+**Cause:** The `soroban-sdk` version in `Cargo.toml` does not match the version expected by the contract source.  
+**Fix:** Ensure `soroban-sdk` is pinned to `22.0.0` in `contracts/payment-processing-contract/Cargo.toml` and run:
+```bash
+cargo update
+cargo test
+```
+
+---
+
+### 7. `cargo audit` reports vulnerabilities
+
+**Symptom:** CI fails on the `security-audit` step with one or more advisory warnings.  
+**Cause:** A dependency has a known CVE or has been yanked from crates.io.  
+**Fix:** Run `cargo audit` locally to see the full report, then either update the affected dependency or add a temporary `[advisories]` ignore entry in `deny.toml` with a justification comment while a fix is prepared.
 
 ---
 
