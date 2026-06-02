@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 #![no_std]
 
 extern crate alloc;
@@ -20,9 +22,9 @@ use soroban_sdk::{
 use error::PaymentError;
 use storage::REFUND_WINDOW;
 use types::{
-    DataKey, GlobalStats, MerchantStats, Merchant, MerchantCategory, MultisigPayment,
-    PaymentFilter, PaymentOrder, PaymentPage, PaymentRecord, PaymentStatus, RefundRecord,
-    RefundStatus, SortField, SortOrder,
+    DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
+    PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
+    SubscriptionPlan, SubscriptionState, SubscriptionStatus,
 };
 
 #[contract]
@@ -32,28 +34,31 @@ pub struct PaymentContract;
 impl PaymentContract {
     // ── Admin ─────────────────────────────────────────────────────────────────
 
-    /// One-time admin initialisation with N-of-M multi-sig model.
+    /// One-time admin initialisation. Stores the first admin address.
     pub fn set_admin(env: Env, admins: Vec<Address>, threshold: u32) -> Result<(), PaymentError> {
         if storage::get_admin_config(&env).is_some() || storage::get_admin(&env).is_some() {
             return Err(PaymentError::AdminAlreadySet);
         }
-        helper::validate_admin_address(&env, &admin)?;
-        admin.require_auth();
-        storage::set_admin(&env, &admin);
+        if admins.is_empty() {
+            return Err(PaymentError::InvalidInput);
+        }
+        let first = admins.get(0).unwrap();
+        helper::validate_admin_address(&env, &first)?;
+        first.require_auth();
+        storage::set_admin(&env, &first);
+        storage::set_admin_config(&env, &types::AdminConfig { admins, threshold });
         storage::set_contract_version(&env, 1);
         env.events()
-            .publish((DataKey::Admin,), (String::from_str(&env, "admin_set"), admin));
+            .publish((DataKey::Admin,), (String::from_str(&env, "admin_set"), first));
         Ok(())
     }
 
-    /// Upgrade the contract WASM. Admin only.
     pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), PaymentError> {
         helper::require_admin(&env, &admin)?;
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
     }
 
-    /// Return the stored contract version.
     pub fn get_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }
@@ -73,13 +78,11 @@ impl PaymentContract {
         if storage::get_merchant(&env, &merchant_address).is_some() {
             return Err(PaymentError::MerchantAlreadyRegistered);
         }
-        // Whitelist check: if enabled, merchant must be pre-approved by admin
         if storage::is_whitelist_enabled(&env)
             && !storage::is_whitelisted(&env, &merchant_address)
         {
             return Err(PaymentError::Unauthorized);
         }
-        // Validate merchant string fields
         helper::validate_merchant_fields(&name, &description, &contact_info)?;
         let merchant = Merchant {
             address: merchant_address.clone(),
@@ -99,7 +102,6 @@ impl PaymentContract {
         Ok(())
     }
 
-    /// Enable or disable admin-whitelist mode for merchant registration.
     pub fn set_whitelist_mode(
         env: Env,
         admins: Vec<Address>,
@@ -110,7 +112,6 @@ impl PaymentContract {
         Ok(())
     }
 
-    /// Pre-approve a merchant address so it can register when whitelist mode is on.
     pub fn approve_merchant_registration(
         env: Env,
         admins: Vec<Address>,
@@ -131,14 +132,13 @@ impl PaymentContract {
         } else {
             merchant_address.require_auth();
         }
-
         let mut merchant =
             storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)?;
         merchant.active = false;
         storage::save_merchant(&env, &merchant);
         env.events().publish(
             (String::from_str(&env, "merchant_deactivated"),),
-            (merchant_address, caller),
+            merchant_address,
         );
         Ok(())
     }
@@ -147,9 +147,33 @@ impl PaymentContract {
         storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)
     }
 
+    /// Update mutable profile fields of an existing merchant.
+    /// Only the merchant themselves may call this.
+    /// Immutable fields (address, registered_at, signing_public_key, active) are preserved.
+    pub fn update_merchant(
+        env: Env,
+        merchant_address: Address,
+        name: String,
+        description: String,
+        contact_info: String,
+    ) -> Result<(), PaymentError> {
+        merchant_address.require_auth();
+        helper::validate_merchant_fields(&name, &description, &contact_info)?;
+        let mut merchant =
+            storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)?;
+        merchant.name = name.clone();
+        merchant.description = description.clone();
+        merchant.contact_info = contact_info.clone();
+        storage::save_merchant(&env, &merchant);
+        env.events().publish(
+            (String::from_str(&env, "merchant_updated"),),
+            (merchant_address, name, description, contact_info),
+        );
+        Ok(())
+    }
+
     // ── Payment processing ────────────────────────────────────────────────────
 
-    /// Process a payment with an ed25519 signature over the serialised order.
     pub fn process_payment_with_signature(
         env: Env,
         payer: Address,
@@ -158,42 +182,31 @@ impl PaymentContract {
         merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
         payer.require_auth();
-
-        // Ensure the order's embedded payer matches the authenticated payer
         if order.payer != payer {
             return Err(PaymentError::InvalidInput);
         }
-
         helper::validate_amount(order.amount)?;
         helper::validate_order_id(&order.order_id)?;
-
         if storage::get_payment(&env, &order.order_id).is_some() {
             return Err(PaymentError::PaymentAlreadyExists);
         }
-
         let now = env.ledger().timestamp();
         if order.expires_at > 0 && now > order.expires_at {
             return Err(PaymentError::PaymentExpired);
         }
-
-        // Verify merchant is active and retrieve stored signing key
         let merchant = storage::get_merchant(&env, &order.merchant_address)
             .ok_or(PaymentError::MerchantNotFound)?;
         if !merchant.active {
             return Err(PaymentError::MerchantInactive);
         }
-
-        let merchant_public_key = merchant
+        let stored_key = merchant
             .signing_public_key
             .unwrap_or_else(|| BytesN::from_array(&env, &[0u8; 32]));
-
-        // Verify signature over full order serialisation as payload
-        let payload = order.clone().to_xdr(&env);
-        let test_key = BytesN::from_array(&env, &[0u8; 32]);
-        if merchant_public_key != test_key {
-            helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;
+        let zero_key = BytesN::from_array(&env, &[0u8; 32]);
+        if stored_key != zero_key {
+            let payload = order.clone().to_xdr(&env);
+            helper::verify_signature(&env, &stored_key, &payload, &signature)?;
         }
-
         let record = PaymentRecord {
             order_id: order.order_id.clone(),
             merchant_address: order.merchant_address.clone(),
@@ -206,19 +219,16 @@ impl PaymentContract {
             paid_at: now,
             description: order.description.clone(),
         };
-
         storage::save_payment(&env, &record);
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &payer, &order.order_id);
         storage::push_global_payment_id(&env, &order.order_id);
         storage::increment_payment_stats(&env, order.amount)?;
-        storage::increment_merchant_payment_stats(&env, &order.merchant_address, order.amount)?;
 
         // Commit payment state before the external token transfer to reduce
         // re-entrancy risk in external contracts.
         let token_client = token::Client::new(&env, &order.token);
         token_client.transfer(&payer, &order.merchant_address, &order.amount);
-
         env.events().publish(
             (String::from_str(&env, "payment_processed"),),
             (order.order_id, payer, order.merchant_address, order.amount),
@@ -235,7 +245,6 @@ impl PaymentContract {
     ) -> Result<PaymentRecord, PaymentError> {
         caller.require_auth();
         let record = storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
-
         let is_admin = if let Some(config) = storage::get_admin_config(&env) {
             config.admins.contains(&caller)
         } else if let Some(admin) = storage::get_admin(&env) {
@@ -243,7 +252,6 @@ impl PaymentContract {
         } else {
             false
         };
-
         if caller != record.payer && caller != record.merchant_address && !is_admin {
             return Err(PaymentError::Unauthorized);
         }
@@ -285,33 +293,18 @@ impl PaymentContract {
         date_end: Option<u64>,
     ) -> Result<GlobalStats, PaymentError> {
         helper::require_multi_admin(&env, admins)?;
-
         if date_start.is_none() && date_end.is_none() {
             return Ok(storage::get_global_stats(&env));
         }
-
         let mut stats = GlobalStats {
             total_payments: 0,
             total_volume: 0,
             total_refunds: 0,
             total_refund_volume: 0,
         };
-
-        let p_ids = storage::get_global_payment_ids(&env);
-        for id in p_ids.iter() {
+        for id in storage::get_global_payment_ids(&env).iter() {
             if let Some(record) = storage::get_payment(&env, &id) {
-                let mut matches = true;
-                if let Some(start) = date_start {
-                    if record.paid_at < start {
-                        matches = false;
-                    }
-                }
-                if let Some(end) = date_end {
-                    if record.paid_at > end {
-                        matches = false;
-                    }
-                }
-                if matches {
+                if helper::in_date_range(record.paid_at, date_start, date_end) {
                     stats.total_payments += 1;
                     stats.total_volume = stats
                         .total_volume
@@ -320,22 +313,9 @@ impl PaymentContract {
                 }
             }
         }
-
-        let r_ids = storage::get_all_refund_ids(&env);
-        for id in r_ids.iter() {
+        for id in storage::get_all_refund_ids(&env).iter() {
             if let Some(record) = storage::get_refund(&env, &id) {
-                let mut matches = true;
-                if let Some(start) = date_start {
-                    if record.initiated_at < start {
-                        matches = false;
-                    }
-                }
-                if let Some(end) = date_end {
-                    if record.initiated_at > end {
-                        matches = false;
-                    }
-                }
-                if matches {
+                if helper::in_date_range(record.initiated_at, date_start, date_end) {
                     stats.total_refunds += 1;
                     stats.total_refund_volume = stats
                         .total_refund_volume
@@ -344,7 +324,6 @@ impl PaymentContract {
                 }
             }
         }
-
         Ok(stats)
     }
 
@@ -413,12 +392,12 @@ impl PaymentContract {
 
     pub fn update_payment_status(
         env: Env,
-        caller: Address,
-        order_id: Bytes,
-        refunded_amount: i128,
+        _caller: Address,
+        _order_id: Bytes,
+        _refunded_amount: i128,
     ) -> Result<(), PaymentError> {
-        // Intentionally removed from public ABI: refund state must be modified
-        // exclusively via the refund workflow (initiate/approve/execute).
+        // Intentionally disabled: refund state is managed exclusively via the
+        // initiate/approve/execute refund workflow.
         Err(PaymentError::InvalidInput)
     }
 
@@ -441,11 +420,9 @@ impl PaymentContract {
         let period = storage::get_cleanup_period(&env);
         let now = env.ledger().timestamp();
         let cutoff = now.saturating_sub(period);
-
         let ids = storage::get_global_payment_ids(&env);
         let mut new_ids = Vec::new(&env);
-        let mut count = 0;
-
+        let mut count = 0u32;
         for id in ids.iter() {
             if let Some(record) = storage::get_payment(&env, &id) {
                 if record.paid_at < cutoff {
@@ -456,11 +433,9 @@ impl PaymentContract {
                 }
             }
         }
-
         if count > 0 {
             storage::set_global_payment_ids(&env, &new_ids);
         }
-
         Ok(count)
     }
 
@@ -502,30 +477,29 @@ impl PaymentContract {
     ) -> Result<(), PaymentError> {
         caller.require_auth();
         helper::validate_amount(amount)?;
-
         if reason.len() > 256 {
             return Err(PaymentError::InvalidInput);
         }
 
-        let record =
+        let mut record =
             storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
-
         if caller != record.payer && caller != record.merchant_address {
             return Err(PaymentError::Unauthorized);
         }
-
         let now = env.ledger().timestamp();
         if now > record.paid_at + REFUND_WINDOW {
             return Err(PaymentError::RefundWindowExpired);
         }
-
         let new_total = record.refunded_amount + record.pending_refund_amount + amount;
         if new_total > record.amount {
             return Err(PaymentError::RefundAmountExceedsPayment);
         }
-
         if storage::get_refund(&env, &refund_id).is_some() {
             return Err(PaymentError::RefundAlreadyExists);
+        }
+
+        if storage::get_order_refund_count(&env, &order_id) >= storage::MAX_PENDING_REFUNDS {
+            return Err(PaymentError::InvalidInput);
         }
 
         let refund = RefundRecord {
@@ -536,12 +510,13 @@ impl PaymentContract {
             status: RefundStatus::Pending,
             initiated_by: caller.clone(),
             initiated_at: now,
+            dispute_reason: String::from_str(&env, ""),
         };
         storage::save_refund(&env, &refund);
+        storage::increment_order_refund_count(&env, &order_id);
 
         record.pending_refund_amount += amount;
         storage::save_payment(&env, &record);
-
         env.events().publish(
             (String::from_str(&env, "refund_initiated"),),
             (refund_id, caller, amount),
@@ -558,31 +533,23 @@ impl PaymentContract {
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
-
         let record =
             storage::get_payment(&env, &refund.order_id).ok_or(PaymentError::PaymentNotFound)?;
-
-        // Allow admin (multi-sig) or the merchant (merchant must be active)
         let is_authorized = if let Some(admins) = admin_authorizers {
             helper::require_multi_admin(&env, admins).is_ok()
         } else {
             helper::require_merchant(&env, &caller, &record.merchant_address).is_ok()
         };
-
         if !is_authorized {
             return Err(PaymentError::Unauthorized);
         }
-
         if refund.status != RefundStatus::Pending {
             return Err(PaymentError::RefundAlreadyCompleted);
         }
-
         refund.status = RefundStatus::Approved;
         storage::save_refund(&env, &refund);
-        env.events().publish(
-            (String::from_str(&env, "refund_approved"),),
-            refund_id,
-        );
+        env.events()
+            .publish((String::from_str(&env, "refund_approved"),), refund_id);
         Ok(())
     }
 
@@ -595,32 +562,26 @@ impl PaymentContract {
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
-
         let record =
             storage::get_payment(&env, &refund.order_id).ok_or(PaymentError::PaymentNotFound)?;
-
-        // Allow admin (multi-sig) or the merchant (merchant must be active)
         let is_authorized = if let Some(admins) = admin_authorizers {
             helper::require_multi_admin(&env, admins).is_ok()
         } else {
             helper::require_merchant(&env, &caller, &record.merchant_address).is_ok()
         };
-
         if !is_authorized {
             return Err(PaymentError::Unauthorized);
         }
-
         if refund.status != RefundStatus::Pending {
             return Err(PaymentError::RefundAlreadyCompleted);
         }
-
         refund.status = RefundStatus::Rejected;
         storage::save_refund(&env, &refund);
-
         let mut record = storage::get_payment(&env, &refund.order_id)
             .ok_or(PaymentError::PaymentNotFound)?;
         record.pending_refund_amount = record.pending_refund_amount.saturating_sub(refund.amount);
         storage::save_payment(&env, &record);
+        storage::decrement_order_refund_count(&env, &refund.order_id);
 
         env.events().publish(
             (String::from_str(&env, "refund_rejected"),),
@@ -633,18 +594,14 @@ impl PaymentContract {
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
-
         if refund.status != RefundStatus::Approved {
             return Err(PaymentError::RefundNotApproved);
         }
-
         let mut record = storage::get_payment(&env, &refund.order_id)
             .ok_or(PaymentError::PaymentNotFound)?;
-
         if caller != record.merchant_address {
             return Err(PaymentError::Unauthorized);
         }
-
         let new_total = record.refunded_amount + refund.amount;
         record.refunded_amount = new_total;
         record.pending_refund_amount = record.pending_refund_amount.saturating_sub(refund.amount);
@@ -654,18 +611,13 @@ impl PaymentContract {
             PaymentStatus::PartiallyRefunded
         };
         storage::save_payment(&env, &record);
-
         refund.status = RefundStatus::Completed;
         storage::save_refund(&env, &refund);
         storage::push_all_refund_id(&env, &refund_id);
+        storage::decrement_order_refund_count(&env, &refund.order_id);
         storage::increment_refund_stats(&env, refund.amount)?;
-        storage::increment_merchant_refund_stats(&env, &record.merchant_address, refund.amount)?;
-
-        // Commit refund and payment state before the external token transfer to
-        // reduce re-entrancy risk in external contracts.
         let token_client = token::Client::new(&env, &record.token);
         token_client.transfer(&record.merchant_address, &record.payer, &refund.amount);
-
         env.events().publish(
             (String::from_str(&env, "refund_executed"),),
             (refund_id, refund.amount),
@@ -673,10 +625,7 @@ impl PaymentContract {
         Ok(())
     }
 
-    pub fn get_refund_status(
-        env: Env,
-        refund_id: Bytes,
-    ) -> Result<RefundStatus, PaymentError> {
+    pub fn get_refund_status(env: Env, refund_id: Bytes) -> Result<RefundStatus, PaymentError> {
         let refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
         Ok(refund.status)
@@ -693,22 +642,17 @@ impl PaymentContract {
     ) -> Result<(), PaymentError> {
         initiator.require_auth();
         helper::validate_amount(order.amount)?;
-
         if storage::get_multisig(&env, &payment_id).is_some() {
             return Err(PaymentError::PaymentAlreadyExists);
         }
         if required_signers.is_empty() || required_signers.len() > storage::MAX_SIGNERS {
             return Err(PaymentError::InvalidInput);
         }
-
-        // Verify merchant is active
         let merchant = storage::get_merchant(&env, &order.merchant_address)
             .ok_or(PaymentError::MerchantNotFound)?;
         if !merchant.active {
             return Err(PaymentError::MerchantInactive);
         }
-
-        // Ensure no duplicate signers
         let mut unique_signers = Vec::new(&env);
         for signer in required_signers.iter() {
             if unique_signers.contains(&signer) {
@@ -716,10 +660,8 @@ impl PaymentContract {
             }
             unique_signers.push_back(signer);
         }
-
         let now = env.ledger().timestamp();
         let expires_at = now + storage::get_default_multisig_expiry(&env);
-
         let ms = MultisigPayment {
             payment_id: payment_id.clone(),
             order,
@@ -729,11 +671,9 @@ impl PaymentContract {
             expires_at,
             created_at: now,
         };
-        // Move funds from initiator into contract escrow to lock them.
         let token_client = token::Client::new(&env, &ms.order.token);
         let contract_addr = env.current_contract_address();
         token_client.transfer(&initiator, &contract_addr, &ms.order.amount);
-
         storage::save_multisig(&env, &ms);
         env.events().publish(
             (String::from_str(&env, "multisig_initiated"),),
@@ -750,7 +690,6 @@ impl PaymentContract {
         signer.require_auth();
         let mut ms =
             storage::get_multisig(&env, &payment_id).ok_or(PaymentError::MultisigNotFound)?;
-
         if ms.executed {
             return Err(PaymentError::MultisigAlreadyExecuted);
         }
@@ -763,7 +702,6 @@ impl PaymentContract {
         if ms.signatures.contains(&signer) {
             return Err(PaymentError::MultisigAlreadySigned);
         }
-
         ms.signatures.push_back(signer.clone());
         storage::save_multisig(&env, &ms);
         env.events().publish(
@@ -781,7 +719,6 @@ impl PaymentContract {
         executor.require_auth();
         let mut ms =
             storage::get_multisig(&env, &payment_id).ok_or(PaymentError::MultisigNotFound)?;
-
         if ms.executed {
             return Err(PaymentError::MultisigAlreadyExecuted);
         }
@@ -792,17 +729,13 @@ impl PaymentContract {
         if ms.signatures.len() < ms.required_signers.len() {
             return Err(PaymentError::InsufficientSignatures);
         }
-
         let order = &ms.order;
         if order.expires_at > 0 && now > order.expires_at {
             return Err(PaymentError::PaymentExpired);
         }
-
-        // Release funds from contract escrow to merchant.
         let token_client = token::Client::new(&env, &order.token);
         let contract_addr = env.current_contract_address();
         token_client.transfer(&contract_addr, &order.merchant_address, &order.amount);
-
         let record = PaymentRecord {
             order_id: order.order_id.clone(),
             merchant_address: order.merchant_address.clone(),
@@ -819,14 +752,116 @@ impl PaymentContract {
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &executor, &order.order_id);
         storage::push_global_payment_id(&env, &order.order_id);
-        storage::increment_payment_stats(&env, order.amount);
+        storage::increment_payment_stats(&env, order.amount)?;
 
         ms.executed = true;
         storage::save_multisig(&env, &ms);
-
         env.events().publish(
             (String::from_str(&env, "multisig_executed"),),
             (payment_id, executor, order.amount),
+        );
+        Ok(())
+    }
+
+    // ── Dispute resolution ────────────────────────────────────────────────────
+
+    /// Escalate a merchant-rejected refund to admin arbitration.
+    ///
+    /// Only the original payer may call this, and only when the refund is in
+    /// `Rejected` state. Transitions the refund to `Disputed` and persists the
+    /// dispute reason. Emits `refund_disputed`.
+    pub fn dispute_refund(
+        env: Env,
+        caller: Address,
+        refund_id: Bytes,
+        reason: String,
+    ) -> Result<(), PaymentError> {
+        caller.require_auth();
+
+        if reason.len() > 256 {
+            return Err(PaymentError::InvalidInput);
+        }
+
+        let mut refund =
+            storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
+
+        // Only the original payer may dispute.
+        if caller != refund.initiated_by {
+            return Err(PaymentError::DisputeUnauthorized);
+        }
+
+        // Refund must be in Rejected state.
+        if refund.status != RefundStatus::Rejected {
+            return Err(PaymentError::RefundNotRejected);
+        }
+
+        refund.status = RefundStatus::Disputed;
+        refund.dispute_reason = reason.clone();
+        storage::save_refund(&env, &refund);
+
+        env.events().publish(
+            (String::from_str(&env, "refund_disputed"),),
+            (refund_id, caller, reason),
+        );
+        Ok(())
+    }
+
+    /// Admin-only: resolve a disputed refund.
+    ///
+    /// - `approve = true`  → override the merchant rejection, execute payout to
+    ///   payer, and mark the refund `Completed`.
+    /// - `approve = false` → uphold the merchant rejection, mark the refund
+    ///   `Rejected` (closed), no payout.
+    ///
+    /// Emits `dispute_resolved` with the resolver identity and outcome.
+    pub fn resolve_dispute(
+        env: Env,
+        admins: Vec<Address>,
+        refund_id: Bytes,
+        approve: bool,
+    ) -> Result<(), PaymentError> {
+        helper::require_multi_admin(&env, admins.clone())?;
+
+        let mut refund =
+            storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
+
+        if refund.status != RefundStatus::Disputed {
+            return Err(PaymentError::RefundNotDisputed);
+        }
+
+        let mut record = storage::get_payment(&env, &refund.order_id)
+            .ok_or(PaymentError::PaymentNotFound)?;
+
+        // Identify the resolving admin for event metadata.
+        let resolver = admins.get(0).unwrap();
+
+        if approve {
+            // Execute payout: merchant → payer.
+            let new_total = record.refunded_amount + refund.amount;
+            record.refunded_amount = new_total;
+            record.status = if new_total == record.amount {
+                PaymentStatus::FullyRefunded
+            } else {
+                PaymentStatus::PartiallyRefunded
+            };
+            storage::save_payment(&env, &record);
+
+            refund.status = RefundStatus::Completed;
+            storage::save_refund(&env, &refund);
+            storage::push_all_refund_id(&env, &refund_id);
+            storage::increment_refund_stats(&env, refund.amount)?;
+
+            let token_client = token::Client::new(&env, &record.token);
+            token_client.transfer(&record.merchant_address, &record.payer, &refund.amount);
+        } else {
+            // Uphold rejection — close the dispute with no payout.
+            refund.status = RefundStatus::Rejected;
+            storage::save_refund(&env, &refund);
+        }
+
+        env.events().publish(
+            (String::from_str(&env, "dispute_resolved"),),
+            (refund_id, resolver, approve),
         );
         Ok(())
     }
@@ -843,11 +878,8 @@ impl PaymentContract {
         sort_order: SortOrder,
     ) -> Result<PaymentPage, PaymentError> {
         let cap = limit.min(100) as usize;
-
-        // Collect all matching records
         let mut records: RustVec<PaymentRecord> = RustVec::new();
         let mut skip = cursor.is_some();
-
         for id in ids.iter() {
             if skip {
                 if Some(id.clone()) == cursor {
@@ -865,10 +897,7 @@ impl PaymentContract {
                 }
             }
         }
-
         let total = records.len() as u32;
-
-        // Sort using Rust's efficient sorting
         records.sort_by(|a, b| {
             let (v1, v2) = match sort_field {
                 SortField::Date => (a.paid_at as i128, b.paid_at as i128),
@@ -879,14 +908,11 @@ impl PaymentContract {
                 SortOrder::Descending => v2.cmp(&v1),
             }
         });
-
         let next_cursor = if records.len() > cap {
             records.get(cap - 1).map(|r| r.order_id.clone())
         } else {
             None
         };
-
-        // Truncate to cap and convert back to Soroban Vec
         let mut page: Vec<PaymentRecord> = Vec::new(env);
         for i in 0..(records.len().min(cap)) {
             page.push_back(records[i].clone());
@@ -899,22 +925,6 @@ impl PaymentContract {
         })
     }
 }
-ending => v1.cmp(&v2),
-                SortOrder::Descending => v2.cmp(&v1),
-            }
-        });
-
-        let next_cursor = if records.len() > cap {
-            records.get(cap - 1).map(|r| r.order_id.clone())
-        } else {
-            None
-        };
-
-        // Truncate to cap and convert back to Soroban Vec
-        let mut page: Vec<PaymentRecord> = Vec::new(env);
-        for i in 0..(records.len().min(cap)) {
-            page.push_back(records[i].clone());
-        }
 
         Ok(PaymentPage {
             records: page,

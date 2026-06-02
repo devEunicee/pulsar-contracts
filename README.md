@@ -18,6 +18,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 - [Testing](#testing)
 - [Local Network](#local-network)
 - [Deployment](#deployment)
+- [Environment Seeding](#environment-seeding)
 - [Contract API](#contract-api)
   - [Admin](#admin)
   - [Merchant Management](#merchant-management)
@@ -29,6 +30,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 - [Analytics](#analytics)
 - [Events](#events)
 - [Error Codes](#error-codes)
+- [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -38,7 +40,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 
 | Feature | Description |
 |---|---|
-| Merchant registry | Register, deactivate, and query merchants |
+| Merchant registry | Register, deactivate, and query merchants. |
 | Signed payments | Process payments verified by ed25519 merchant signature |
 | Refunds | Initiate → Approve/Reject → Execute with 30-day window |
 | Multi-sig | Require N-of-N signers before executing a payment |
@@ -53,7 +55,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 | Tool | Install |
 |---|---|
 | Rust (stable) | https://www.rust-lang.org/tools/install |
-| Stellar CLI | https://developers.stellar.org/docs/tools/stellar-cli |
+| Stellar CLI | https://developers.stellar.org/docs/tools/stellar-cli. |
 | Docker Desktop | https://www.docker.com/products/docker-desktop |
 
 Verify:
@@ -193,6 +195,59 @@ stellar contract invoke \
   -- set_admin \
   --admin <ADMIN_ADDRESS>
 ```
+
+---
+
+## Environment Seeding
+
+Quickly populate a local or testnet environment with sample merchants, payments, and refunds for manual testing.
+
+### Quick Start
+
+```bash
+# 1. Deploy the contract and save the CONTRACT_ID
+export CONTRACT_ID="CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4"
+
+# 2. Run the seeding script
+bash scripts/seed.sh config/local.toml
+```
+
+### What Gets Created
+
+The seeding script automatically:
+- Registers 3 merchants with different categories (Retail, Food, Services)
+- Processes 10 payments between payer and merchants
+- Initiates 2 refunds for testing the refund workflow
+
+### Configuration
+
+Edit `config/local.toml` to customize:
+- Number of merchants, payments, and refunds
+- Merchant categories and names
+- Payment amounts and descriptions
+- Network (local, testnet, public)
+
+### Verification
+
+After seeding, query the contract to verify:
+
+```bash
+# Global stats
+stellar contract invoke --id $CONTRACT_ID --source-account admin --network local \
+  -- get_global_payment_stats \
+  --admins '["<ADMIN_ADDRESS>"]' \
+  --date_start null \
+  --date_end null
+
+# Merchant stats
+stellar contract invoke --id $CONTRACT_ID --source-account merchant_1 --network local \
+  -- get_merchant_stats \
+  --merchant <MERCHANT_ADDRESS> \
+  --date_start null \
+  --date_end null
+```
+
+**See also**: [SEEDING_GUIDE.md](docs/SEEDING_GUIDE.md) for detailed instructions and troubleshooting.
 
 ---
 
@@ -378,6 +433,7 @@ stellar contract invoke --id $CONTRACT_ID --source-account <MERCHANT_KEY> --netw
 **See also**: [ANALYTICS_GUIDE.md](docs/ANALYTICS_GUIDE.md) for detailed usage and best practices.
 
 ---
+> **Known Limitation:** The `date_start` and `date_end` parameters for `get_global_payment_stats` are currently a no‑op due to SC‑003. They will be functional once the issue is resolved.
 
 ### Refunds
 
@@ -649,6 +705,22 @@ stellar network container restart local
 **Test failures** — check `soroban-sdk` version matches `22.0.0` in `Cargo.toml`.
 
 ---
+
+## Rate Limiting and Spam Prevention
+
+Pulsar is a Soroban smart contract on Stellar. Stellar's fee market provides natural, protocol-level rate limiting:
+
+- **Resource fees**: every contract invocation pays a fee proportional to the CPU instructions, memory, and storage it consumes. Spamming `process_payment` or `initiate_refund` from a single account rapidly drains that account's XLM balance.
+- **Surge pricing**: when the network is congested, base fees rise automatically, making bulk spam economically prohibitive.
+- **Sequence number enforcement**: each transaction must use the account's next sequence number, so parallel spam from a single account is serialised by the protocol.
+
+For applications that require stricter per-account throttling (e.g., preventing storage inflation from many small refund initiations), implement rate limiting in an **off-chain API gateway** in front of your contract invocation endpoint:
+
+```
+Client → API Gateway (rate limit: N req/min per account) → Stellar RPC → Contract
+```
+
+A simple token-bucket or sliding-window limiter keyed on the caller's Stellar address is sufficient. Libraries such as `express-rate-limit` (Node.js) or `slowapi` (Python) can be used for this purpose.
 
 ## Contributing
 
