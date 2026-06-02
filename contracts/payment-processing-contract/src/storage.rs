@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: MIT
+
 use soroban_sdk::{Address, Bytes, Env, Vec};
 
 use crate::error::PaymentError;
 use crate::types::{
     AdminConfig, DataKey, GlobalStats, Merchant, MultisigPayment, PaymentRecord, RefundRecord,
+    SubscriptionState,
 };
 
 // ── TTL constants ─────────────────────────────────────────────────────────────
@@ -12,6 +15,20 @@ pub const TTL_LEDGERS: u32 = 6_307_200;
 /// Refresh TTL when remaining lifetime drops below ~6 months.
 pub const TTL_THRESHOLD: u32 = TTL_LEDGERS / 2;
 
+// ── Instance TTL management ───────────────────────────────────────────────────
+
+/// Extend the instance storage TTL so the contract never goes dormant.
+///
+/// Instance storage holds Admin, GlobalStats, CleanupPeriod, and
+/// DefaultMultisigExpiry. If the contract goes dormant and instance storage
+/// expires the contract becomes unusable. Call this on every invocation (or
+/// at minimum on every admin operation) to keep the contract alive.
+pub fn bump_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD, TTL_LEDGERS);
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 pub fn get_admin(env: &Env) -> Option<Address> {
@@ -20,6 +37,14 @@ pub fn get_admin(env: &Env) -> Option<Address> {
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
+}
+
+pub fn get_admin_config(env: &Env) -> Option<AdminConfig> {
+    env.storage().instance().get(&DataKey::AdminConfig)
+}
+
+pub fn set_admin_config(env: &Env, config: &AdminConfig) {
+    env.storage().instance().set(&DataKey::AdminConfig, config);
 }
 
 // ── Contract version ──────────────────────────────────────────────────────────
@@ -86,8 +111,6 @@ pub fn remove_payment(env: &Env, order_id: &Bytes) {
 }
 
 // ── Payment index lists ───────────────────────────────────────────────────────
-
-const CHUNK_SIZE: u32 = 100;
 
 pub fn get_merchant_payment_ids(env: &Env, merchant: &Address) -> Vec<Bytes> {
     let key = DataKey::MerchantPayments(merchant.clone());
@@ -239,6 +262,33 @@ pub fn push_all_refund_id(env: &Env, refund_id: &Bytes) {
         .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
+// ── Per-order pending refund count ────────────────────────────────────────────
+
+pub fn get_order_refund_count(env: &Env, order_id: &Bytes) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OrderRefundCount(order_id.clone()))
+        .unwrap_or(0)
+}
+
+pub fn increment_order_refund_count(env: &Env, order_id: &Bytes) {
+    let count = get_order_refund_count(env, order_id) + 1;
+    let key = DataKey::OrderRefundCount(order_id.clone());
+    env.storage().persistent().set(&key, &count);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+pub fn decrement_order_refund_count(env: &Env, order_id: &Bytes) {
+    let count = get_order_refund_count(env, order_id).saturating_sub(1);
+    let key = DataKey::OrderRefundCount(order_id.clone());
+    env.storage().persistent().set(&key, &count);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
 // ── Multisig ──────────────────────────────────────────────────────────────────
 
 pub fn get_multisig(env: &Env, payment_id: &Bytes) -> Option<MultisigPayment> {
@@ -298,6 +348,8 @@ pub const REFUND_WINDOW: u64 = 2_592_000;
 pub const DEFAULT_MULTISIG_EXPIRY: u64 = 86_400;
 /// Maximum number of signers for a multisig payment
 pub const MAX_SIGNERS: u32 = 10;
+/// Maximum number of pending refunds per order
+pub const MAX_PENDING_REFUNDS: u32 = 10;
 
 pub fn get_cleanup_period(env: &Env) -> u64 {
     env.storage()
@@ -325,17 +377,39 @@ pub fn set_default_multisig_expiry(env: &Env, expiry: u64) {
         .set(&DataKey::DefaultMultisigExpiry, &expiry);
 }
 
-// ── Pause / emergency stop ────────────────────────────────────────────────────
+// ── Token allowlist (SEC-009) ─────────────────────────────────────────────────
 
-pub fn is_paused(env: &Env) -> bool {
+/// Returns true when the token allowlist enforcement is active.
+pub fn is_token_allowlist_enabled(env: &Env) -> bool {
     env.storage()
         .instance()
-        .get(&DataKey::Paused)
+        .get(&DataKey::TokenAllowlistEnabled)
         .unwrap_or(false)
 }
 
-pub fn set_paused(env: &Env, paused: bool) {
-    env.storage().instance().set(&DataKey::Paused, &paused);
+pub fn set_token_allowlist_enabled(env: &Env, enabled: bool) {
+    env.storage()
+        .instance()
+        .set(&DataKey::TokenAllowlistEnabled, &enabled);
+}
+
+/// Returns true when `token` is on the admin-managed allowlist.
+pub fn is_token_allowed(env: &Env, token: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AllowedToken(token.clone()))
+        .unwrap_or(false)
+}
+
+pub fn set_token_allowed(env: &Env, token: &Address, allowed: bool) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::AllowedToken(token.clone()), &allowed);
+    env.storage().persistent().extend_ttl(
+        &DataKey::AllowedToken(token.clone()),
+        TTL_THRESHOLD,
+        TTL_LEDGERS,
+    );
 }
 
 // ── Global stats ──────────────────────────────────────────────────────────────
@@ -376,4 +450,25 @@ pub fn increment_refund_stats(env: &Env, amount: i128) -> Result<(), PaymentErro
         .ok_or(PaymentError::ArithmeticError)?;
     save_global_stats(env, &stats);
     Ok(())
+}
+
+// ── Subscription ──────────────────────────────────────────────────────────────
+
+pub fn get_subscription(env: &Env, subscription_id: &Bytes) -> Option<SubscriptionState> {
+    let key = DataKey::Subscription(subscription_id.clone());
+    let result = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
+}
+
+pub fn save_subscription(env: &Env, sub: &SubscriptionState) {
+    let key = DataKey::Subscription(sub.subscription_id.clone());
+    env.storage().persistent().set(&key, sub);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 use soroban_sdk::contracterror;
 
 #[contracterror]
@@ -19,7 +21,6 @@ pub enum PaymentError {
     InvalidAmount = 22,
     InvalidSignature = 23,
     PaymentExpired = 24,
-    // InsufficientBalance removed: token transfers from SDK panic on insufficient funds
 
     // Refund
     RefundNotFound = 30,
@@ -28,6 +29,12 @@ pub enum PaymentError {
     RefundAmountExceedsPayment = 33,
     RefundNotApproved = 34,
     RefundAlreadyCompleted = 35,
+    /// Refund must be in Rejected state to be disputed.
+    RefundNotRejected = 36,
+    /// Dispute can only be raised by the original payer.
+    DisputeUnauthorized = 37,
+    /// Refund is not in Disputed state; cannot resolve.
+    RefundNotDisputed = 38,
 
     // Multisig
     MultisigNotFound = 40,
@@ -40,6 +47,15 @@ pub enum PaymentError {
     StorageError = 51,
     ArithmeticError = 52,
 
-    // Emergency stop
-    ContractPaused = 60,
+    // Subscription
+    /// Subscription ID not found in storage.
+    SubscriptionNotFound = 60,
+    /// A subscription with this ID already exists.
+    SubscriptionAlreadyExists = 61,
+    /// Subscription is not in Active state (e.g. already cancelled).
+    SubscriptionNotActive = 62,
+    /// Payment interval has not elapsed since the last charge.
+    /// The off-chain scheduler must wait until `last_charged_at + interval`
+    /// before invoking `process_subscription_payment` again.
+    SubscriptionIntervalNotElapsed = 63,
 }
