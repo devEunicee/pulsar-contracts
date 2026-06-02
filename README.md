@@ -37,7 +37,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 
 | Feature | Description |
 |---|---|
-| Merchant registry | Register, deactivate, and query merchants |
+| Merchant registry | Register, deactivate, and query merchants. |
 | Signed payments | Process payments verified by ed25519 merchant signature |
 | Refunds | Initiate → Approve/Reject → Execute with 30-day window |
 | Multi-sig | Require N-of-N signers before executing a payment |
