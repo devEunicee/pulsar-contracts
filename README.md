@@ -18,6 +18,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 - [Testing](#testing)
 - [Local Network](#local-network)
 - [Deployment](#deployment)
+- [Environment Seeding](#environment-seeding)
 - [Contract API](#contract-api)
   - [Admin](#admin)
   - [Merchant Management](#merchant-management)
@@ -192,6 +193,59 @@ stellar contract invoke \
   -- set_admin \
   --admin <ADMIN_ADDRESS>
 ```
+
+---
+
+## Environment Seeding
+
+Quickly populate a local or testnet environment with sample merchants, payments, and refunds for manual testing.
+
+### Quick Start
+
+```bash
+# 1. Deploy the contract and save the CONTRACT_ID
+export CONTRACT_ID="CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4"
+
+# 2. Run the seeding script
+bash scripts/seed.sh config/local.toml
+```
+
+### What Gets Created
+
+The seeding script automatically:
+- Registers 3 merchants with different categories (Retail, Food, Services)
+- Processes 10 payments between payer and merchants
+- Initiates 2 refunds for testing the refund workflow
+
+### Configuration
+
+Edit `config/local.toml` to customize:
+- Number of merchants, payments, and refunds
+- Merchant categories and names
+- Payment amounts and descriptions
+- Network (local, testnet, public)
+
+### Verification
+
+After seeding, query the contract to verify:
+
+```bash
+# Global stats
+stellar contract invoke --id $CONTRACT_ID --source-account admin --network local \
+  -- get_global_payment_stats \
+  --admins '["<ADMIN_ADDRESS>"]' \
+  --date_start null \
+  --date_end null
+
+# Merchant stats
+stellar contract invoke --id $CONTRACT_ID --source-account merchant_1 --network local \
+  -- get_merchant_stats \
+  --merchant <MERCHANT_ADDRESS> \
+  --date_start null \
+  --date_end null
+```
+
+**See also**: [SEEDING_GUIDE.md](docs/SEEDING_GUIDE.md) for detailed instructions and troubleshooting.
 
 ---
 
