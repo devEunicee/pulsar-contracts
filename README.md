@@ -18,6 +18,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 - [Testing](#testing)
 - [Local Network](#local-network)
 - [Deployment](#deployment)
+- [Environment Seeding](#environment-seeding)
 - [Contract API](#contract-api)
   - [Admin](#admin)
   - [Merchant Management](#merchant-management)
@@ -26,9 +27,10 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
   - [Refunds](#refunds)
   - [Multi-Signature Payments](#multi-signature-payments)
   - [Admin Config](#admin-config)
-- [Merchant Categories](#merchant-categories)
+- [Analytics](#analytics)
 - [Events](#events)
 - [Error Codes](#error-codes)
+- [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -38,12 +40,13 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 
 | Feature | Description |
 |---|---|
-| Merchant registry | Register, deactivate, and query merchants |
+| Merchant registry | Register, deactivate, and query merchants. |
 | Signed payments | Process payments verified by ed25519 merchant signature |
 | Refunds | Initiate → Approve/Reject → Execute with 30-day window |
 | Multi-sig | Require N-of-N signers before executing a payment |
 | History queries | Cursor-based pagination with filtering and sorting |
 | Global stats | Admin-only aggregate payment and refund statistics |
+| Merchant stats | Per-merchant analytics with optional date filtering |
 
 ---
 
@@ -52,7 +55,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 | Tool | Install |
 |---|---|
 | Rust (stable) | https://www.rust-lang.org/tools/install |
-| Stellar CLI | https://developers.stellar.org/docs/tools/stellar-cli |
+| Stellar CLI | https://developers.stellar.org/docs/tools/stellar-cli. |
 | Docker Desktop | https://www.docker.com/products/docker-desktop |
 
 Verify:
@@ -192,6 +195,59 @@ stellar contract invoke \
   -- set_admin \
   --admin <ADMIN_ADDRESS>
 ```
+
+---
+
+## Environment Seeding
+
+Quickly populate a local or testnet environment with sample merchants, payments, and refunds for manual testing.
+
+### Quick Start
+
+```bash
+# 1. Deploy the contract and save the CONTRACT_ID
+export CONTRACT_ID="CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4"
+
+# 2. Run the seeding script
+bash scripts/seed.sh config/local.toml
+```
+
+### What Gets Created
+
+The seeding script automatically:
+- Registers 3 merchants with different categories (Retail, Food, Services)
+- Processes 10 payments between payer and merchants
+- Initiates 2 refunds for testing the refund workflow
+
+### Configuration
+
+Edit `config/local.toml` to customize:
+- Number of merchants, payments, and refunds
+- Merchant categories and names
+- Payment amounts and descriptions
+- Network (local, testnet, public)
+
+### Verification
+
+After seeding, query the contract to verify:
+
+```bash
+# Global stats
+stellar contract invoke --id $CONTRACT_ID --source-account admin --network local \
+  -- get_global_payment_stats \
+  --admins '["<ADMIN_ADDRESS>"]' \
+  --date_start null \
+  --date_end null
+
+# Merchant stats
+stellar contract invoke --id $CONTRACT_ID --source-account merchant_1 --network local \
+  -- get_merchant_stats \
+  --merchant <MERCHANT_ADDRESS> \
+  --date_start null \
+  --date_end null
+```
+
+**See also**: [SEEDING_GUIDE.md](docs/SEEDING_GUIDE.md) for detailed instructions and troubleshooting.
 
 ---
 
@@ -358,7 +414,28 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
   --date_end null
 ```
 
+#### `get_merchant_stats`
+
+Returns per-merchant payment and refund statistics. Accessible by the merchant (own stats) or admin (any merchant).
+
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <MERCHANT_KEY> --network local \
+  -- get_merchant_stats \
+  --merchant <ADDRESS> \
+  --date_start null \
+  --date_end null
+```
+
+**Returns**: `MerchantStats` with `total_payments`, `total_volume`, `total_refunds`, `total_refund_volume`
+
+**Query Modes**:
+- **Unfiltered** (no date range): Returns cached stats (O(1))
+- **Filtered** (with date range): Computes stats on-demand (O(n) where n = merchant's payment count)
+
+**See also**: [ANALYTICS_GUIDE.md](docs/ANALYTICS_GUIDE.md) for detailed usage and best practices.
+
 ---
+> **Known Limitation:** The `date_start` and `date_end` parameters for `get_global_payment_stats` are currently a no‑op due to SC‑003. They will be functional once the issue is resolved.
 
 ### Refunds
 
@@ -476,31 +553,75 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
 
 ---
 
-## Merchant Categories
+## Analytics
 
-Merchant categories help classify and organize merchants by business type. Currently, five predefined categories are supported:
+The contract provides on-chain analytics capabilities for monitoring payment activity and merchant performance.
 
-| Category | Description |
-|---|---|
-| `Retail` | Retail stores and e-commerce |
-| `Food` | Restaurants, cafes, food delivery |
-| `Services` | Professional services, consulting, repairs |
-| `Digital` | Software, SaaS, digital products |
-| `Other` | Miscellaneous categories |
+### Global Payment Stats
 
-### Adding New Categories
+Admin-only aggregate statistics across all merchants and payments.
 
-New merchant categories require a contract upgrade. This is by design to ensure type safety and prevent invalid categories.
+**Function**: `get_global_payment_stats(admins, date_start, date_end)`
 
-**Process:**
-1. Update the `MerchantCategory` enum in `src/types.rs`
-2. Add test coverage for the new category
-3. Build and test the contract
-4. Deploy the new WASM and call `upgrade()`
+**Returns**: `GlobalStats` with `total_payments`, `total_volume`, `total_refunds`, `total_refund_volume`
 
-**See also:**
-- [CATEGORY_MIGRATION_GUIDE.md](docs/CATEGORY_MIGRATION_GUIDE.md) — Step-by-step migration guide
-- [ADR-0004](docs/adr/0004-merchant-category-management.md) — Design rationale and future considerations
+**Example**:
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network local \
+  -- get_global_payment_stats \
+  --admins '["<ADMIN_ADDRESS>"]' \
+  --date_start null \
+  --date_end null
+```
+
+### Per-Merchant Stats
+
+Per-merchant payment and refund statistics with optional date filtering.
+
+**Function**: `get_merchant_stats(merchant, date_start, date_end)`
+
+**Access**: Merchant (own stats) or Admin (any merchant)
+
+**Returns**: `MerchantStats` with merchant address, payment count, volume, refund count, and refund volume
+
+**Example**:
+```bash
+# Merchant queries their own stats
+stellar contract invoke --id $CONTRACT_ID --source-account <MERCHANT_KEY> --network local \
+  -- get_merchant_stats \
+  --merchant <MERCHANT_ADDRESS> \
+  --date_start null \
+  --date_end null
+
+# Admin queries a merchant's stats with date filtering
+stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network local \
+  -- get_merchant_stats \
+  --merchant <MERCHANT_ADDRESS> \
+  --date_start 1704067200 \
+  --date_end 1704153600
+```
+
+**Query Modes**:
+- **Unfiltered** (no date range): Returns cached stats (O(1) performance)
+- **Filtered** (with date range): Computes stats on-demand (O(n) where n = merchant's payment count)
+
+### Analytics Strategy
+
+The contract implements a **hybrid analytics approach**:
+
+1. **On-Chain Analytics** (current):
+   - Per-merchant stats with date filtering
+   - Global aggregate stats
+   - Cached for performance
+   - Suitable for real-time queries and merchant dashboards
+
+2. **Off-Chain Analytics** (future - BE-001):
+   - Event-driven indexer service
+   - Per-token breakdown and time-series data
+   - Complex queries and historical analysis
+   - Reduces on-chain computation overhead
+
+**See also**: [ANALYTICS_GUIDE.md](docs/ANALYTICS_GUIDE.md) for detailed usage, best practices, and performance considerations.
 
 ---
 
@@ -586,6 +707,22 @@ stellar network container restart local
 **Test failures** — check `soroban-sdk` version matches `22.0.0` in `Cargo.toml`.
 
 ---
+
+## Rate Limiting and Spam Prevention
+
+Pulsar is a Soroban smart contract on Stellar. Stellar's fee market provides natural, protocol-level rate limiting:
+
+- **Resource fees**: every contract invocation pays a fee proportional to the CPU instructions, memory, and storage it consumes. Spamming `process_payment` or `initiate_refund` from a single account rapidly drains that account's XLM balance.
+- **Surge pricing**: when the network is congested, base fees rise automatically, making bulk spam economically prohibitive.
+- **Sequence number enforcement**: each transaction must use the account's next sequence number, so parallel spam from a single account is serialised by the protocol.
+
+For applications that require stricter per-account throttling (e.g., preventing storage inflation from many small refund initiations), implement rate limiting in an **off-chain API gateway** in front of your contract invocation endpoint:
+
+```
+Client → API Gateway (rate limit: N req/min per account) → Stellar RPC → Contract
+```
+
+A simple token-bucket or sliding-window limiter keyed on the caller's Stellar address is sufficient. Libraries such as `express-rate-limit` (Node.js) or `slowapi` (Python) can be used for this purpose.
 
 ## Contributing
 
