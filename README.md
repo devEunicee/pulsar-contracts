@@ -37,8 +37,8 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 
 | Feature | Description |
 |---|---|
-| Merchant registry | Register, deactivate, and query merchants |
-| Signed payments | Process payments verified by ed25519 merchant signature. |
+| Merchant registry | Register, deactivate, and query merchants. |
+| Signed payments | Process payments verified by ed25519 merchant signature |
 | Refunds | Initiate → Approve/Reject → Execute with 30-day window |
 | Multi-sig | Require N-of-N signers before executing a payment |
 | History queries | Cursor-based pagination with filtering and sorting |
@@ -51,7 +51,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 | Tool | Install |
 |---|---|
 | Rust (stable) | https://www.rust-lang.org/tools/install |
-| Stellar CLI | https://developers.stellar.org/docs/tools/stellar-cli |
+| Stellar CLI | https://developers.stellar.org/docs/tools/stellar-cli. |
 | Docker Desktop | https://www.docker.com/products/docker-desktop |
 
 Verify:
