@@ -45,6 +45,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check license headers
+        run: bash scripts/check-license-headers.sh
+
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
