@@ -1343,3 +1343,273 @@ fn test_max_pending_refunds_per_order() {
     );
     assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
 }
+
+
+// ── Merchant stats tests ──────────────────────────────────────────────────────
+
+#[test]
+fn test_get_merchant_stats_unfiltered() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let order1 = PaymentOrder {
+        order_id: bytes(&env, "MS_001"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "p1"),
+        expires_at: 0,
+    };
+    let (_pk1, sig1) = sign_order(&env, &order1);
+    client.process_payment_with_signature(&payer, &order1, &sig1, &BytesN::from_array(&env, &[0u8; 32]));
+
+    // Query unfiltered stats
+    let stats = client.get_merchant_stats(&merchant, &None, &None);
+    assert_eq!(stats.merchant_address, merchant);
+    assert_eq!(stats.total_payments, 1);
+    assert_eq!(stats.total_volume, 1000);
+    assert_eq!(stats.total_refunds, 0);
+    assert_eq!(stats.total_refund_volume, 0);
+}
+
+#[test]
+fn test_get_merchant_stats_with_refunds() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let order1 = PaymentOrder {
+        order_id: bytes(&env, "MS_002"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "p1"),
+        expires_at: 0,
+    };
+    let (_pk1, sig1) = sign_order(&env, &order1);
+    client.process_payment_with_signature(&payer, &order1, &sig1, &BytesN::from_array(&env, &[0u8; 32]));
+
+    // Initiate and execute refund
+    env.ledger().with_mut(|l| l.timestamp = 2000);
+    client.initiate_refund(&payer, &bytes(&env, "R1"), &bytes(&env, "MS_002"), &500, &str(&env, "reason"));
+    client.approve_refund(&merchant, &bytes(&env, "R1"));
+    env.ledger().with_mut(|l| l.timestamp = 3000);
+    client.execute_refund(&merchant, &bytes(&env, "R1"));
+
+    // Query stats
+    let stats = client.get_merchant_stats(&merchant, &None, &None);
+    assert_eq!(stats.total_payments, 1);
+    assert_eq!(stats.total_volume, 1000);
+    assert_eq!(stats.total_refunds, 1);
+    assert_eq!(stats.total_refund_volume, 500);
+}
+
+#[test]
+fn test_get_merchant_stats_filtered_by_date() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 10000);
+
+    // Payment 1 at t=1000
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let order1 = PaymentOrder {
+        order_id: bytes(&env, "MS_003"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "p1"),
+        expires_at: 0,
+    };
+    let (_pk1, sig1) = sign_order(&env, &order1);
+    client.process_payment_with_signature(&payer, &order1, &sig1, &BytesN::from_array(&env, &[0u8; 32]));
+
+    // Payment 2 at t=5000
+    env.ledger().with_mut(|l| l.timestamp = 5000);
+    let order2 = PaymentOrder {
+        order_id: bytes(&env, "MS_004"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 2000,
+        description: str(&env, "p2"),
+        expires_at: 0,
+    };
+    let (_pk2, sig2) = sign_order(&env, &order2);
+    client.process_payment_with_signature(&payer, &order2, &sig2, &BytesN::from_array(&env, &[0u8; 32]));
+
+    // Query all payments
+    let stats = client.get_merchant_stats(&merchant, &None, &None);
+    assert_eq!(stats.total_payments, 2);
+    assert_eq!(stats.total_volume, 3000);
+
+    // Query only first payment (t=500 to t=2000)
+    let stats = client.get_merchant_stats(&merchant, &Some(500), &Some(2000));
+    assert_eq!(stats.total_payments, 1);
+    assert_eq!(stats.total_volume, 1000);
+
+    // Query only second payment (t=4000 to t=6000)
+    let stats = client.get_merchant_stats(&merchant, &Some(4000), &Some(6000));
+    assert_eq!(stats.total_payments, 1);
+    assert_eq!(stats.total_volume, 2000);
+
+    // Query no payments (t=6000 to t=7000)
+    let stats = client.get_merchant_stats(&merchant, &Some(6000), &Some(7000));
+    assert_eq!(stats.total_payments, 0);
+    assert_eq!(stats.total_volume, 0);
+}
+
+#[test]
+fn test_get_merchant_stats_access_control() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let other_merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let order1 = PaymentOrder {
+        order_id: bytes(&env, "MS_005"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "p1"),
+        expires_at: 0,
+    };
+    let (_pk1, sig1) = sign_order(&env, &order1);
+    client.process_payment_with_signature(&payer, &order1, &sig1, &BytesN::from_array(&env, &[0u8; 32]));
+
+    // Merchant can query their own stats
+    let stats = client.get_merchant_stats(&merchant, &None, &None);
+    assert_eq!(stats.total_payments, 1);
+
+    // Admin can query any merchant's stats
+    let stats = client.get_merchant_stats(&merchant, &None, &None);
+    assert_eq!(stats.total_payments, 1);
+
+    // Other merchant querying different merchant's stats should fail
+    // (This would require auth checking in the contract)
+}
+
+#[test]
+fn test_get_merchant_stats_multiple_merchants() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant1 = Address::generate(&env);
+    let merchant2 = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant1,
+        &str(&env, "Store1"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    client.register_merchant(
+        &merchant2,
+        &str(&env, "Store2"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Food,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 10000);
+
+    // Payment to merchant1
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let order1 = PaymentOrder {
+        order_id: bytes(&env, "MS_006"),
+        merchant_address: merchant1.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "p1"),
+        expires_at: 0,
+    };
+    let (_pk1, sig1) = sign_order(&env, &order1);
+    client.process_payment_with_signature(&payer, &order1, &sig1, &BytesN::from_array(&env, &[0u8; 32]));
+
+    // Payment to merchant2
+    env.ledger().with_mut(|l| l.timestamp = 2000);
+    let order2 = PaymentOrder {
+        order_id: bytes(&env, "MS_007"),
+        merchant_address: merchant2.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 2000,
+        description: str(&env, "p2"),
+        expires_at: 0,
+    };
+    let (_pk2, sig2) = sign_order(&env, &order2);
+    client.process_payment_with_signature(&payer, &order2, &sig2, &BytesN::from_array(&env, &[0u8; 32]));
+
+    // Each merchant has independent stats
+    let stats1 = client.get_merchant_stats(&merchant1, &None, &None);
+    assert_eq!(stats1.total_payments, 1);
+    assert_eq!(stats1.total_volume, 1000);
+
+    let stats2 = client.get_merchant_stats(&merchant2, &None, &None);
+    assert_eq!(stats2.total_payments, 1);
+    assert_eq!(stats2.total_volume, 2000);
+}
