@@ -1516,7 +1516,7 @@ fn test_payer_history_filter_date_range() {
         date_end: Some(2000),
         amount_min: None,
         amount_max: None,
-        token: None,
+        tokens: None,
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1543,7 +1543,7 @@ fn test_payer_history_filter_amount_range() {
         date_end: None,
         amount_min: Some(100),
         amount_max: Some(200),
-        token: None,
+        tokens: None,
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1609,7 +1609,7 @@ fn test_payer_history_filter_by_token() {
         date_end: None,
         amount_min: None,
         amount_max: None,
-        token: Some(token2.clone()),
+        tokens: Some(Vec::from_array(&env, [token2.clone()])),
         status: StatusFilter::Any,
     };
     let page = client.get_payer_payment_history(
@@ -1647,7 +1647,7 @@ fn test_payer_history_filter_by_status() {
         date_end: None,
         amount_min: None,
         amount_max: None,
-        token: None,
+        tokens: None,
         status: StatusFilter::PartiallyRefunded,
     };
     let page = client.get_payer_payment_history(
