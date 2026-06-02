@@ -465,6 +465,10 @@ impl PaymentContract {
             return Err(PaymentError::RefundAlreadyExists);
         }
 
+        if storage::get_order_refund_count(&env, &order_id) >= storage::MAX_PENDING_REFUNDS {
+            return Err(PaymentError::InvalidInput);
+        }
+
         let refund = RefundRecord {
             refund_id: refund_id.clone(),
             order_id: order_id.clone(),
@@ -475,6 +479,7 @@ impl PaymentContract {
             initiated_at: now,
         };
         storage::save_refund(&env, &refund);
+        storage::increment_order_refund_count(&env, &order_id);
 
         record.pending_refund_amount += amount;
         storage::save_payment(&env, &record);
@@ -558,6 +563,7 @@ impl PaymentContract {
             .ok_or(PaymentError::PaymentNotFound)?;
         record.pending_refund_amount = record.pending_refund_amount.saturating_sub(refund.amount);
         storage::save_payment(&env, &record);
+        storage::decrement_order_refund_count(&env, &refund.order_id);
 
         env.events().publish(
             (String::from_str(&env, "refund_rejected"),),
@@ -595,6 +601,7 @@ impl PaymentContract {
         refund.status = RefundStatus::Completed;
         storage::save_refund(&env, &refund);
         storage::push_all_refund_id(&env, &refund_id);
+        storage::decrement_order_refund_count(&env, &refund.order_id);
         storage::increment_refund_stats(&env, refund.amount)?;
 
         // Commit refund and payment state before the external token transfer to

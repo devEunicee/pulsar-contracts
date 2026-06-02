@@ -105,7 +105,7 @@ pub struct MultisigPayment {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SortField {
     Date,
-    Amount,
+    Amount, // .
 }
 
 #[contracttype]
@@ -189,4 +189,5 @@ pub enum DataKey {
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
+    OrderRefundCount(Bytes),
 }
