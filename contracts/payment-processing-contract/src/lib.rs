@@ -146,6 +146,31 @@ impl PaymentContract {
         storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)
     }
 
+    /// Update mutable profile fields of an existing merchant.
+    /// Only the merchant themselves may call this.
+    /// Immutable fields (address, registered_at, signing_public_key, active) are preserved.
+    pub fn update_merchant(
+        env: Env,
+        merchant_address: Address,
+        name: String,
+        description: String,
+        contact_info: String,
+    ) -> Result<(), PaymentError> {
+        merchant_address.require_auth();
+        helper::validate_merchant_fields(&name, &description, &contact_info)?;
+        let mut merchant =
+            storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)?;
+        merchant.name = name.clone();
+        merchant.description = description.clone();
+        merchant.contact_info = contact_info.clone();
+        storage::save_merchant(&env, &merchant);
+        env.events().publish(
+            (String::from_str(&env, "merchant_updated"),),
+            (merchant_address, name, description, contact_info),
+        );
+        Ok(())
+    }
+
     // ── Payment processing ────────────────────────────────────────────────────
 
     /// Process a payment with an ed25519 signature over the serialised order.
