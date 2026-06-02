@@ -22,3 +22,8 @@ Thumbs.db
 
 # NOTE: Cargo.lock is intentionally committed for contract crates
 # to ensure reproducible builds.
+
+# Environment secret files (NEVER commit these)
+.env
+.env.*
+!.env.example

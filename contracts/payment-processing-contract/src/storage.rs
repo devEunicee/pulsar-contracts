@@ -15,6 +15,20 @@ pub const TTL_LEDGERS: u32 = 6_307_200;
 /// Refresh TTL when remaining lifetime drops below ~6 months.
 pub const TTL_THRESHOLD: u32 = TTL_LEDGERS / 2;
 
+// ── Instance TTL management ───────────────────────────────────────────────────
+
+/// Extend the instance storage TTL so the contract never goes dormant.
+///
+/// Instance storage holds Admin, GlobalStats, CleanupPeriod, and
+/// DefaultMultisigExpiry. If the contract goes dormant and instance storage
+/// expires the contract becomes unusable. Call this on every invocation (or
+/// at minimum on every admin operation) to keep the contract alive.
+pub fn bump_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD, TTL_LEDGERS);
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 pub fn get_admin(env: &Env) -> Option<Address> {

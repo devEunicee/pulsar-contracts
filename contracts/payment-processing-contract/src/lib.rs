@@ -36,6 +36,7 @@ impl PaymentContract {
 
     /// One-time admin initialisation. Stores the first admin address.
     pub fn set_admin(env: Env, admins: Vec<Address>, threshold: u32) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         if storage::get_admin_config(&env).is_some() || storage::get_admin(&env).is_some() {
             return Err(PaymentError::AdminAlreadySet);
         }
@@ -54,17 +55,44 @@ impl PaymentContract {
     }
 
     pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_admin(&env, &admin)?;
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
     }
 
     pub fn get_version(env: Env) -> u32 {
+        storage::bump_instance_ttl(&env);
         storage::get_contract_version(&env)
+    }
+
+    /// Extend the instance storage TTL so the contract never goes dormant.
+    ///
+    /// Instance storage holds Admin, GlobalStats, CleanupPeriod, and
+    /// DefaultMultisigExpiry. If the contract goes dormant and instance storage
+    /// expires the contract becomes unusable. This function is callable by
+    /// anyone and should be invoked periodically to keep the contract alive.
+    pub fn bump_instance_ttl(env: Env) {
+        storage::bump_instance_ttl(&env);
     }
 
     // ── Merchant management ───────────────────────────────────────────────────
 
+    /// Register a new merchant on the contract.
+    ///
+    /// # Parameters
+    /// - `merchant_address` — The address that will own this merchant profile.
+    /// - `name` — Display name (max 64 bytes).
+    /// - `description` — Short description (max 256 bytes).
+    /// - `contact_info` — Printable ASCII contact string (max 128 bytes).
+    /// - `category` — Merchant category enum.
+    /// - `signing_public_key` — Optional ed25519 public key used to verify
+    ///   payment signatures. Pass `None` to skip signature verification.
+    ///
+    /// # Errors
+    /// - [`PaymentError::MerchantAlreadyRegistered`] if the address is already registered.
+    /// - [`PaymentError::Unauthorized`] if whitelist mode is on and the address is not approved.
+    /// - [`PaymentError::InvalidInput`] if any string field exceeds its length limit.
     pub fn register_merchant(
         env: Env,
         merchant_address: Address,
@@ -74,6 +102,7 @@ impl PaymentContract {
         category: MerchantCategory,
         signing_public_key: Option<BytesN<32>>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         merchant_address.require_auth();
         if storage::get_merchant(&env, &merchant_address).is_some() {
             return Err(PaymentError::MerchantAlreadyRegistered);
@@ -107,6 +136,7 @@ impl PaymentContract {
         admins: Vec<Address>,
         enabled: bool,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         storage::set_whitelist_enabled(&env, enabled);
         Ok(())
@@ -117,16 +147,32 @@ impl PaymentContract {
         admins: Vec<Address>,
         merchant_address: Address,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         storage::set_whitelisted(&env, &merchant_address, true);
         Ok(())
     }
 
+    /// Deactivate a merchant, preventing new payments from being processed.
+    ///
+    /// Can be called by the merchant themselves or by the admin multi-sig.
+    ///
+    /// # Parameters
+    /// - `merchant_address` — The merchant to deactivate.
+    /// - `admin_authorizers` — If `Some`, the call is treated as an admin
+    ///   action and the provided addresses must satisfy the multi-sig threshold.
+    ///   If `None`, `merchant_address` must authorise the call directly.
+    ///
+    /// # Errors
+    /// - [`PaymentError::MerchantNotFound`] if the merchant does not exist.
+    /// - [`PaymentError::Unauthorized`] if neither the merchant nor a valid
+    ///   admin multi-sig authorises the call.
     pub fn deactivate_merchant(
         env: Env,
         merchant_address: Address,
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         if let Some(admins) = admin_authorizers {
             helper::require_multi_admin(&env, admins)?;
         } else {
@@ -143,7 +189,19 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Retrieve a merchant's profile by address.
+    ///
+    /// # Parameters
+    /// - `merchant_address` — The address of the merchant to look up.
+    ///
+    /// # Returns
+    /// The [`Merchant`] struct if found.
+    ///
+    /// # Errors
+    /// - [`PaymentError::MerchantNotFound`] if no merchant is registered at
+    ///   `merchant_address`.
     pub fn get_merchant(env: Env, merchant_address: Address) -> Result<Merchant, PaymentError> {
+        storage::bump_instance_ttl(&env);
         storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)
     }
 
@@ -181,6 +239,7 @@ impl PaymentContract {
         signature: BytesN<64>,
         merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         payer.require_auth();
         if order.payer != payer {
             return Err(PaymentError::InvalidInput);
@@ -238,11 +297,27 @@ impl PaymentContract {
 
     // ── Payment queries ───────────────────────────────────────────────────────
 
+    /// Retrieve a single payment record by its order ID.
+    ///
+    /// Only the payer, the merchant, or an admin may view a payment record.
+    ///
+    /// # Parameters
+    /// - `caller` — The address requesting the record; must be authenticated.
+    /// - `order_id` — The unique order identifier.
+    ///
+    /// # Returns
+    /// The [`PaymentRecord`] if found and the caller is authorised.
+    ///
+    /// # Errors
+    /// - [`PaymentError::PaymentNotFound`] if no payment exists for `order_id`.
+    /// - [`PaymentError::Unauthorized`] if `caller` is not the payer, merchant,
+    ///   or an admin.
     pub fn get_payment_by_id(
         env: Env,
         caller: Address,
         order_id: Bytes,
     ) -> Result<PaymentRecord, PaymentError> {
+        storage::bump_instance_ttl(&env);
         caller.require_auth();
         let record = storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
         let is_admin = if let Some(config) = storage::get_admin_config(&env) {
@@ -258,6 +333,23 @@ impl PaymentContract {
         Ok(record)
     }
 
+    /// Return a paginated, filtered, and sorted list of payments for a merchant.
+    ///
+    /// # Parameters
+    /// - `merchant` — The merchant address; must be authenticated.
+    /// - `cursor` — Optional order ID to resume pagination from.
+    /// - `limit` — Maximum number of records to return (capped at 100).
+    /// - `filter` — Optional [`PaymentFilter`] to narrow results.
+    /// - `sort_field` — Sort by [`SortField::Date`] or [`SortField::Amount`].
+    /// - `sort_order` — [`SortOrder::Ascending`] or [`SortOrder::Descending`].
+    ///
+    /// # Returns
+    /// A [`PaymentPage`] containing the matching records, a next-page cursor,
+    /// and the total count of matching records.
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if `merchant` is not authenticated or
+    ///   is not an active registered merchant.
     pub fn get_merchant_payment_history(
         env: Env,
         merchant: Address,
@@ -267,11 +359,28 @@ impl PaymentContract {
         sort_field: SortField,
         sort_order: SortOrder,
     ) -> Result<PaymentPage, PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_merchant(&env, &merchant, &merchant)?;
         let ids = storage::get_merchant_payment_ids(&env, &merchant);
         Self::paginate_payments(&env, ids, cursor, limit, filter, sort_field, sort_order)
     }
 
+    /// Return a paginated, filtered, and sorted list of payments made by a payer.
+    ///
+    /// # Parameters
+    /// - `payer` — The payer address; must be authenticated.
+    /// - `cursor` — Optional order ID to resume pagination from.
+    /// - `limit` — Maximum number of records to return (capped at 100).
+    /// - `filter` — Optional [`PaymentFilter`] to narrow results.
+    /// - `sort_field` — Sort by [`SortField::Date`] or [`SortField::Amount`].
+    /// - `sort_order` — [`SortOrder::Ascending`] or [`SortOrder::Descending`].
+    ///
+    /// # Returns
+    /// A [`PaymentPage`] containing the matching records, a next-page cursor,
+    /// and the total count of matching records.
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if `payer` is not authenticated.
     pub fn get_payer_payment_history(
         env: Env,
         payer: Address,
@@ -281,17 +390,37 @@ impl PaymentContract {
         sort_field: SortField,
         sort_order: SortOrder,
     ) -> Result<PaymentPage, PaymentError> {
+        storage::bump_instance_ttl(&env);
         payer.require_auth();
         let ids = storage::get_payer_payment_ids(&env, &payer);
         Self::paginate_payments(&env, ids, cursor, limit, filter, sort_field, sort_order)
     }
 
+    /// Return aggregate payment and refund statistics. Admin only.
+    ///
+    /// When `date_start` and `date_end` are both `None` the pre-computed
+    /// counters are returned directly. When either date bound is provided the
+    /// function scans all payment and refund records and filters by timestamp.
+    ///
+    /// # Parameters
+    /// - `admins` — Admin addresses that together satisfy the multi-sig threshold.
+    /// - `date_start` — Optional Unix timestamp lower bound (inclusive).
+    /// - `date_end` — Optional Unix timestamp upper bound (inclusive).
+    ///
+    /// # Returns
+    /// A [`GlobalStats`] struct with total payment/refund counts and volumes.
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if the provided addresses do not satisfy
+    ///   the admin multi-sig threshold.
+    /// - [`PaymentError::ArithmeticError`] on volume overflow.
     pub fn get_global_payment_stats(
         env: Env,
         admins: Vec<Address>,
         date_start: Option<u64>,
         date_end: Option<u64>,
     ) -> Result<GlobalStats, PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         if date_start.is_none() && date_end.is_none() {
             return Ok(storage::get_global_stats(&env));
@@ -390,6 +519,14 @@ impl PaymentContract {
 
     // ── Payment management ────────────────────────────────────────────────────
 
+    /// Stub retained for ABI compatibility — always returns `InvalidInput`.
+    ///
+    /// Refund state must be modified exclusively through the refund workflow
+    /// (`initiate_refund` → `approve_refund` → `execute_refund`). Direct
+    /// status mutation is intentionally disabled.
+    ///
+    /// # Errors
+    /// Always returns [`PaymentError::InvalidInput`].
     pub fn update_payment_status(
         env: Env,
         _caller: Address,
@@ -401,11 +538,24 @@ impl PaymentContract {
         Err(PaymentError::InvalidInput)
     }
 
+    /// Permanently remove a payment record from storage. Admin only.
+    ///
+    /// Also removes the record from the merchant, payer, and global payment
+    /// index lists. This operation is irreversible.
+    ///
+    /// # Parameters
+    /// - `admins` — Admin addresses that together satisfy the multi-sig threshold.
+    /// - `order_id` — The order ID of the payment to archive.
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if the admin multi-sig check fails.
+    /// - [`PaymentError::PaymentNotFound`] if no payment exists for `order_id`.
     pub fn archive_payment_record(
         env: Env,
         admins: Vec<Address>,
         order_id: Bytes,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         let record = storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
         storage::remove_payment(&env, &order_id);
@@ -415,7 +565,21 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Remove payment records older than the configured cleanup period. Admin only.
+    ///
+    /// Iterates the global payment index and deletes any record whose `paid_at`
+    /// timestamp is older than `now - cleanup_period`.
+    ///
+    /// # Parameters
+    /// - `admins` — Admin addresses that together satisfy the multi-sig threshold.
+    ///
+    /// # Returns
+    /// The number of payment records that were deleted.
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if the admin multi-sig check fails.
     pub fn cleanup_expired_payments(env: Env, admins: Vec<Address>) -> Result<u32, PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         let period = storage::get_cleanup_period(&env);
         let now = env.ledger().timestamp();
@@ -439,11 +603,21 @@ impl PaymentContract {
         Ok(count)
     }
 
+    /// Set the period after which payment records are eligible for cleanup. Admin only.
+    ///
+    /// # Parameters
+    /// - `admins` — Admin addresses that together satisfy the multi-sig threshold.
+    /// - `period` — Cleanup period in seconds. Must be greater than zero.
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if the admin multi-sig check fails.
+    /// - [`PaymentError::InvalidInput`] if `period` is zero.
     pub fn set_payment_cleanup_period(
         env: Env,
         admins: Vec<Address>,
         period: u64,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         if period == 0 {
             return Err(PaymentError::InvalidInput);
@@ -452,11 +626,21 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Set the default expiry duration for new multi-sig payments. Admin only.
+    ///
+    /// # Parameters
+    /// - `admins` — Admin addresses that together satisfy the multi-sig threshold.
+    /// - `expiry` — Expiry duration in seconds. Must be at least 3600 (1 hour).
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if the admin multi-sig check fails.
+    /// - [`PaymentError::InvalidInput`] if `expiry` is less than 3600.
     pub fn set_default_multisig_expiry(
         env: Env,
         admins: Vec<Address>,
         expiry: u64,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         helper::require_multi_admin(&env, admins)?;
         if expiry < 3600 {
             return Err(PaymentError::InvalidInput);
@@ -467,6 +651,29 @@ impl PaymentContract {
 
     // ── Refunds ───────────────────────────────────────────────────────────────
 
+    /// Initiate a refund request for a completed payment.
+    ///
+    /// Either the payer or the merchant may initiate a refund. The refund must
+    /// be initiated within the refund window (30 days from payment).
+    ///
+    /// # Parameters
+    /// - `caller` — The address initiating the refund; must be authenticated.
+    /// - `refund_id` — A unique identifier for this refund request.
+    /// - `order_id` — The order ID of the payment to refund.
+    /// - `amount` — The amount to refund. Must be positive and must not cause
+    ///   total refunds to exceed the original payment amount.
+    /// - `reason` — A human-readable reason string (max 256 bytes).
+    ///
+    /// # Errors
+    /// - [`PaymentError::PaymentNotFound`] if the payment does not exist.
+    /// - [`PaymentError::Unauthorized`] if `caller` is neither the payer nor
+    ///   the merchant.
+    /// - [`PaymentError::RefundWindowExpired`] if the refund window has passed.
+    /// - [`PaymentError::RefundAmountExceedsPayment`] if the requested amount
+    ///   would exceed the original payment.
+    /// - [`PaymentError::RefundAlreadyExists`] if `refund_id` is already in use.
+    /// - [`PaymentError::InvalidAmount`] if `amount` is not positive.
+    /// - [`PaymentError::InvalidInput`] if `reason` exceeds 256 bytes.
     pub fn initiate_refund(
         env: Env,
         caller: Address,
@@ -475,6 +682,7 @@ impl PaymentContract {
         amount: i128,
         reason: String,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         caller.require_auth();
         helper::validate_amount(amount)?;
         if reason.len() > 256 {
@@ -524,12 +732,30 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Approve a pending refund request.
+    ///
+    /// Can be approved by the merchant (directly) or by the admin multi-sig.
+    /// Once approved the refund can be executed by the merchant.
+    ///
+    /// # Parameters
+    /// - `caller` — The address approving the refund; must be authenticated.
+    /// - `refund_id` — The unique identifier of the refund to approve.
+    /// - `admin_authorizers` — If `Some`, the call is treated as an admin
+    ///   action. If `None`, `caller` must be the merchant.
+    ///
+    /// # Errors
+    /// - [`PaymentError::RefundNotFound`] if the refund does not exist.
+    /// - [`PaymentError::PaymentNotFound`] if the associated payment is missing.
+    /// - [`PaymentError::Unauthorized`] if neither the merchant nor a valid
+    ///   admin multi-sig authorises the call.
+    /// - [`PaymentError::RefundAlreadyCompleted`] if the refund is not pending.
     pub fn approve_refund(
         env: Env,
         caller: Address,
         refund_id: Bytes,
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
@@ -553,12 +779,31 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Reject a pending refund request.
+    ///
+    /// Can be rejected by the merchant (directly) or by the admin multi-sig.
+    /// Rejecting a refund releases the reserved pending refund amount back to
+    /// the payment record.
+    ///
+    /// # Parameters
+    /// - `caller` — The address rejecting the refund; must be authenticated.
+    /// - `refund_id` — The unique identifier of the refund to reject.
+    /// - `admin_authorizers` — If `Some`, the call is treated as an admin
+    ///   action. If `None`, `caller` must be the merchant.
+    ///
+    /// # Errors
+    /// - [`PaymentError::RefundNotFound`] if the refund does not exist.
+    /// - [`PaymentError::PaymentNotFound`] if the associated payment is missing.
+    /// - [`PaymentError::Unauthorized`] if neither the merchant nor a valid
+    ///   admin multi-sig authorises the call.
+    /// - [`PaymentError::RefundAlreadyCompleted`] if the refund is not pending.
     pub fn reject_refund(
         env: Env,
         caller: Address,
         refund_id: Bytes,
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
@@ -590,7 +835,23 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Execute an approved refund, transferring tokens back to the payer.
+    ///
+    /// Only the merchant may execute a refund. The refund must be in
+    /// `Approved` status. The token transfer is performed after all state
+    /// updates to reduce re-entrancy risk.
+    ///
+    /// # Parameters
+    /// - `caller` — The merchant address; must be authenticated.
+    /// - `refund_id` — The unique identifier of the refund to execute.
+    ///
+    /// # Errors
+    /// - [`PaymentError::RefundNotFound`] if the refund does not exist.
+    /// - [`PaymentError::RefundNotApproved`] if the refund is not in `Approved` status.
+    /// - [`PaymentError::PaymentNotFound`] if the associated payment is missing.
+    /// - [`PaymentError::Unauthorized`] if `caller` is not the merchant.
     pub fn execute_refund(env: Env, caller: Address, refund_id: Bytes) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
@@ -633,6 +894,26 @@ impl PaymentContract {
 
     // ── Multi-signature payments ───────────────────────────────────────────────
 
+    /// Initiate a multi-signature payment, locking funds in contract escrow.
+    ///
+    /// Funds are transferred from `initiator` to the contract address
+    /// immediately. The payment is only released to the merchant once all
+    /// required signers have signed and `execute_multisig_payment` is called.
+    ///
+    /// # Parameters
+    /// - `initiator` — The address funding the escrow; must be authenticated.
+    /// - `payment_id` — A unique identifier for this multi-sig payment.
+    /// - `order` — The [`PaymentOrder`] describing the payment details.
+    /// - `required_signers` — List of addresses that must sign before execution
+    ///   (1 to `MAX_SIGNERS` entries, no duplicates).
+    ///
+    /// # Errors
+    /// - [`PaymentError::PaymentAlreadyExists`] if `payment_id` is already in use.
+    /// - [`PaymentError::MerchantNotFound`] if the merchant does not exist.
+    /// - [`PaymentError::MerchantInactive`] if the merchant is deactivated.
+    /// - [`PaymentError::InvalidInput`] if `required_signers` is empty, exceeds
+    ///   `MAX_SIGNERS`, or contains duplicates.
+    /// - [`PaymentError::InvalidAmount`] if the order amount is not positive.
     pub fn initiate_multisig_payment(
         env: Env,
         initiator: Address,
@@ -640,6 +921,7 @@ impl PaymentContract {
         order: PaymentOrder,
         required_signers: Vec<Address>,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         initiator.require_auth();
         helper::validate_amount(order.amount)?;
         if storage::get_multisig(&env, &payment_id).is_some() {
@@ -682,11 +964,27 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Add a signature to a pending multi-sig payment.
+    ///
+    /// The signer must be in the `required_signers` list and must not have
+    /// already signed. The payment must not be expired or already executed.
+    ///
+    /// # Parameters
+    /// - `signer` — The address adding their signature; must be authenticated.
+    /// - `payment_id` — The unique identifier of the multi-sig payment.
+    ///
+    /// # Errors
+    /// - [`PaymentError::MultisigNotFound`] if the payment does not exist.
+    /// - [`PaymentError::MultisigAlreadyExecuted`] if the payment was already executed.
+    /// - [`PaymentError::PaymentExpired`] if the payment has expired.
+    /// - [`PaymentError::Unauthorized`] if `signer` is not in `required_signers`.
+    /// - [`PaymentError::MultisigAlreadySigned`] if `signer` has already signed.
     pub fn sign_multisig_payment(
         env: Env,
         signer: Address,
         payment_id: Bytes,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         signer.require_auth();
         let mut ms =
             storage::get_multisig(&env, &payment_id).ok_or(PaymentError::MultisigNotFound)?;
@@ -711,11 +1009,27 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Execute a fully-signed multi-sig payment, releasing escrow to the merchant.
+    ///
+    /// All required signers must have signed before this can be called. Funds
+    /// are transferred from the contract escrow to the merchant. A
+    /// [`PaymentRecord`] is created and indexed.
+    ///
+    /// # Parameters
+    /// - `executor` — The address triggering execution; must be authenticated.
+    /// - `payment_id` — The unique identifier of the multi-sig payment.
+    ///
+    /// # Errors
+    /// - [`PaymentError::MultisigNotFound`] if the payment does not exist.
+    /// - [`PaymentError::MultisigAlreadyExecuted`] if the payment was already executed.
+    /// - [`PaymentError::PaymentExpired`] if the payment or its order has expired.
+    /// - [`PaymentError::InsufficientSignatures`] if not all required signers have signed.
     pub fn execute_multisig_payment(
         env: Env,
         executor: Address,
         payment_id: Bytes,
     ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
         executor.require_auth();
         let mut ms =
             storage::get_multisig(&env, &payment_id).ok_or(PaymentError::MultisigNotFound)?;
