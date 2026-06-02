@@ -1,32 +1,74 @@
-# Local development environment configuration
-# This file is safe to commit — it contains no secrets.
+# SPDX-License-Identifier: MIT
+#
+# Local environment configuration for Pulsar contract seeding.
+# This file is used by scripts/seed.sh to configure the test environment.
 
+# Network configuration
 [network]
-# Soroban RPC endpoint for local standalone node
-rpc_url = "http://localhost:8000/soroban/rpc"
-network_passphrase = "Standalone Network ; February 2017"
-horizon_url = "http://localhost:8000"
+# Network to use: "local", "testnet", or "public"
+name = "local"
+# RPC URL (optional, uses default if not specified)
+# rpc_url = "http://localhost:8000"
 
+# Contract configuration
 [contract]
-# Contract ID is populated after first deployment.
-# Leave empty for a fresh local deploy.
-contract_id = ""
+# Contract ID (will be set by deployment script)
+# id = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4"
 
+# Admin configuration
 [admin]
-# Public key of the admin account (not a secret — safe to commit).
-# The corresponding secret key must be set in the environment variable:
-#   ADMIN_SECRET_KEY=S...
-admin_public_key = ""
+# Admin account name (must exist in Stellar CLI)
+account = "admin"
+# Admin secret key (optional, uses account if not specified)
+# secret_key = "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4"
 
+# Token configuration
 [token]
-# Address of the native XLM token wrapper on the local network.
-# Override with a custom SAC address if needed.
-native_token_address = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+# Token account name (must exist in Stellar CLI)
+account = "token_issuer"
+# Token code (e.g., "USDC")
+code = "USDC"
+# Initial mint amount for testing
+mint_amount = 1000000
 
-# ── Secret values (NEVER commit these) ────────────────────────────────────────
-# The following values must be supplied via environment variables at runtime:
-#
-#   ADMIN_SECRET_KEY   — Stellar secret key (S...) for the admin account
-#
-# Example (.env file, gitignored):
-#   ADMIN_SECRET_KEY=SCZANGBA5RLMPI7JMTP2BYASZVIL7XQ4AQZPQOTSXMS7ZGFU5D4QOKKQ
+# Merchant configuration
+[merchants]
+# Number of merchants to create
+count = 3
+# Merchant categories (will be cycled through)
+categories = ["Retail", "Food", "Services"]
+# Base name for merchants (will be numbered: Merchant 1, Merchant 2, etc.)
+name_prefix = "Test Merchant"
+
+# Payment configuration
+[payments]
+# Number of payments to process
+count = 10
+# Payment amount range (in stroops, 1 XLM = 10,000,000 stroops)
+amount_min = 100000
+amount_max = 500000
+# Payment description prefix
+description_prefix = "Test payment"
+
+# Refund configuration
+[refunds]
+# Number of refunds to initiate
+count = 2
+# Refund amount (as percentage of original payment, 0-100)
+amount_percentage = 50
+# Refund reason
+reason = "Test refund"
+
+# Payer configuration
+[payer]
+# Payer account name (must exist in Stellar CLI)
+account = "payer"
+# Initial balance to mint for payer
+initial_balance = 10000000
+
+# Logging configuration
+[logging]
+# Log level: "debug", "info", "warn", "error"
+level = "info"
+# Enable verbose output
+verbose = false
