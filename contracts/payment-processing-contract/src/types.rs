@@ -71,6 +71,8 @@ pub enum RefundStatus {
     Approved,
     Rejected,
     Completed,
+    /// Payer has escalated a merchant-rejected refund for admin resolution.
+    Disputed,
 }
 
 #[contracttype]
@@ -83,6 +85,8 @@ pub struct RefundRecord {
     pub status: RefundStatus,
     pub initiated_by: Address,
     pub initiated_at: u64,
+    /// Set when the payer disputes a merchant rejection. Empty string if not disputed.
+    pub dispute_reason: String,
 }
 
 // ── Multisig ──────────────────────────────────────────────────────────────────
@@ -105,7 +109,7 @@ pub struct MultisigPayment {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SortField {
     Date,
-    Amount,
+    Amount, // .
 }
 
 #[contracttype]
@@ -131,7 +135,9 @@ pub struct PaymentFilter {
     pub date_end: Option<u64>,
     pub amount_min: Option<i128>,
     pub amount_max: Option<i128>,
-    pub token: Option<Address>,
+    /// Filter by one or more token contract addresses. `None` matches all tokens.
+    /// An empty list also matches all tokens (treated as no filter).
+    pub tokens: Option<Vec<Address>>,
     pub status: StatusFilter,
 }
 
@@ -217,9 +223,15 @@ pub enum DataKey {
     ContractVersion,
     Merchant(Address),
     Payment(Bytes),
-    // Flat payment index lists (replaces the old chunked approach)
+    MerchantPaymentChunk(Address, u32),
+    MerchantPaymentCount(Address),
+    PayerPaymentChunk(Address, u32),
+    PayerPaymentCount(Address),
+    /// Flat payment index list per merchant (replaces chunked approach).
     MerchantPayments(Address),
+    /// Flat payment index list per payer.
     PayerPayments(Address),
+    /// Global flat payment index.
     GlobalPaymentIndex,
     Refund(Bytes),
     Multisig(Bytes),
@@ -229,6 +241,5 @@ pub enum DataKey {
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
-    /// Keyed by subscription_id.
-    Subscription(Bytes),
+    OrderRefundCount(Bytes),
 }

@@ -246,6 +246,33 @@ pub fn push_all_refund_id(env: &Env, refund_id: &Bytes) {
         .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
+// ── Per-order pending refund count ────────────────────────────────────────────
+
+pub fn get_order_refund_count(env: &Env, order_id: &Bytes) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OrderRefundCount(order_id.clone()))
+        .unwrap_or(0)
+}
+
+pub fn increment_order_refund_count(env: &Env, order_id: &Bytes) {
+    let count = get_order_refund_count(env, order_id) + 1;
+    let key = DataKey::OrderRefundCount(order_id.clone());
+    env.storage().persistent().set(&key, &count);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+pub fn decrement_order_refund_count(env: &Env, order_id: &Bytes) {
+    let count = get_order_refund_count(env, order_id).saturating_sub(1);
+    let key = DataKey::OrderRefundCount(order_id.clone());
+    env.storage().persistent().set(&key, &count);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
 // ── Multisig ──────────────────────────────────────────────────────────────────
 
 pub fn get_multisig(env: &Env, payment_id: &Bytes) -> Option<MultisigPayment> {
@@ -305,6 +332,8 @@ pub const REFUND_WINDOW: u64 = 2_592_000;
 pub const DEFAULT_MULTISIG_EXPIRY: u64 = 86_400;
 /// Maximum number of signers for a multisig payment
 pub const MAX_SIGNERS: u32 = 10;
+/// Maximum number of pending refunds per order
+pub const MAX_PENDING_REFUNDS: u32 = 10;
 
 pub fn get_cleanup_period(env: &Env) -> u64 {
     env.storage()

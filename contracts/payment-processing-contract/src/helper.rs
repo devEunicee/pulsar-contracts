@@ -137,8 +137,9 @@ pub fn matches_filter(record: &PaymentRecord, filter: &PaymentFilter) -> bool {
             return false;
         }
     }
-    if let Some(ref token) = filter.token {
-        if record.token != *token {
+    if let Some(ref tokens) = filter.tokens {
+        // Empty list → no filter (match all). Non-empty → token must be in list.
+        if !tokens.is_empty() && !tokens.contains(&record.token) {
             return false;
         }
     }
@@ -163,7 +164,7 @@ pub fn matches_filter(record: &PaymentRecord, filter: &PaymentFilter) -> bool {
     true
 }
 
-/// Require that at least one address in `admins` is the stored admin.
+/// Require that at least one address in `admins` matches the stored admin config.
 pub fn require_multi_admin(env: &Env, admins: Vec<Address>) -> Result<(), PaymentError> {
     if let Some(config) = storage::get_admin_config(env) {
         for addr in admins.iter() {

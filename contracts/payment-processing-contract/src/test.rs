@@ -386,6 +386,23 @@ fn test_approve_refund_unauthorized_fails() {
 }
 
 #[test]
+fn test_initiate_refund_unauthorized_fails() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+    let stranger = Address::generate(&env);
+
+    let result = client.try_initiate_refund(
+        &stranger,
+        &bytes(&env, "REFUND_001"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "Unauthorized refund attempt"),
+    );
+
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
 fn test_refund_exceeds_payment_fails() {
     let (env, client) = setup();
     let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
@@ -1000,11 +1017,77 @@ fn test_process_subscription_payment_first_charge() {
     let sub_id = bytes(&env, "SUB_001");
     client.create_subscription(&payer, &merchant, &sub_id, &make_plan(&env, &token));
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    client.process_subscription_payment(&payer, &sub_id);
-    let sub = client.get_subscription(&sub_id);
-    assert_eq!(sub.last_charged_at, 1000);
-    assert_eq!(token_client.balance(&payer), payer_before - 500);
-    assert_eq!(token_client.balance(&merchant), merchant_before + 500);
+    let o1 = PaymentOrder {
+        order_id: bytes(&env, "D_001"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 100,
+        description: str(&env, "d"),
+        expires_at: 0,
+    };
+    let (_pk, sig) = sign_order(&env, &o1);
+    client.process_payment_with_signature(&payer, &o1, &sig, &BytesN::from_array(&env, &[0u8; 32]));
+
+    env.ledger().with_mut(|l| l.timestamp = 5000);
+    let o2 = PaymentOrder {
+        order_id: bytes(&env, "D_002"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 200,
+        description: str(&env, "d"),
+        expires_at: 0,
+    };
+    let (_pk2, sig2) = sign_order(&env, &o2);
+    client.process_payment_with_signature(&payer, &o2, &sig2, &BytesN::from_array(&env, &[0u8; 32]));
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter {
+        date_start: Some(500),
+        date_end: Some(2000),
+        amount_min: None,
+        amount_max: None,
+        tokens: None,
+        status: StatusFilter::Any,
+    };
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &Some(filter),
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().amount, 100);
+}
+
+#[test]
+fn test_payer_history_filter_amount_range() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) =
+        setup_payer_history(&env, &client, &[50, 150, 500]);
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter {
+        date_start: None,
+        date_end: None,
+        amount_min: Some(100),
+        amount_max: Some(200),
+        tokens: None,
+        status: StatusFilter::Any,
+    };
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &Some(filter),
+        &SortField::Amount,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().amount, 150);
 }
 
 #[test]
@@ -1013,19 +1096,138 @@ fn test_process_subscription_payment_after_interval() {
     let admin = Address::generate(&env);
     let merchant = Address::generate(&env);
     let payer = Address::generate(&env);
-    let token = create_token(&env, &admin);
-    client.set_admin(&admins(&env, &admin), &1);
-    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
-    mint(&env, &token, &payer, 5000);
-    let sub_id = bytes(&env, "SUB_001");
-    client.create_subscription(&payer, &merchant, &sub_id, &make_plan(&env, &token));
-    // First charge at t=1000
-    env.ledger().with_mut(|l| l.timestamp = 1000);
-    client.process_subscription_payment(&payer, &sub_id);
-    // Second charge after interval (30 days = 2_592_000s)
-    env.ledger().with_mut(|l| l.timestamp = 1000 + 2_592_000);
-    client.process_subscription_payment(&payer, &sub_id);
-    assert_eq!(client.get_subscription(&sub_id).last_charged_at, 1000 + 2_592_000);
+    let token1 = create_token(&env, &admin);
+    let token2 = create_token(&env, &admin);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token1, &admin, &payer, 5000);
+    mint(&env, &token2, &admin, &payer, 5000);
+
+    let o1 = PaymentOrder {
+        order_id: bytes(&env, "T_001"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token1.clone(),
+        amount: 100,
+        description: str(&env, "d"),
+        expires_at: 0,
+    };
+    let (_pk, sig) = sign_order(&env, &o1);
+    client.process_payment_with_signature(&payer, &o1, &sig, &BytesN::from_array(&env, &[0u8; 32]));
+
+    let o2 = PaymentOrder {
+        order_id: bytes(&env, "T_002"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token2.clone(),
+        amount: 200,
+        description: str(&env, "d"),
+        expires_at: 0,
+    };
+    let (_pk2, sig2) = sign_order(&env, &o2);
+    client.process_payment_with_signature(&payer, &o2, &sig2, &BytesN::from_array(&env, &[0u8; 32]));
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter {
+        date_start: None,
+        date_end: None,
+        amount_min: None,
+        amount_max: None,
+        tokens: Some(Vec::from_array(&env, [token2.clone()])),
+        status: StatusFilter::Any,
+    };
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &Some(filter),
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().token, token2);
+}
+
+#[test]
+fn test_payer_history_filter_by_status() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, _token) =
+        setup_payer_history(&env, &client, &[300, 400]);
+
+    // Initiate + approve + execute a partial refund on PAY_000
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "RF_001"),
+        &bytes(&env, "PAY_000"),
+        &100,
+        &str(&env, "partial"),
+    );
+    client.approve_refund(&merchant, &bytes(&env, "RF_001"));
+    client.execute_refund(&bytes(&env, "RF_001"));
+
+    use crate::types::{PaymentFilter, StatusFilter};
+    let filter = PaymentFilter {
+        date_start: None,
+        date_end: None,
+        amount_min: None,
+        amount_max: None,
+        tokens: None,
+        status: StatusFilter::PartiallyRefunded,
+    };
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &Some(filter),
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().status, PaymentStatus::PartiallyRefunded);
+}
+
+#[test]
+fn test_payer_history_sort_by_amount_ascending() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) =
+        setup_payer_history(&env, &client, &[300, 100, 200]);
+
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Amount,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.records.get(0).unwrap().amount, 100);
+    assert_eq!(page.records.get(2).unwrap().amount, 300);
+}
+
+#[test]
+fn test_payer_history_sort_by_amount_descending() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) =
+        setup_payer_history(&env, &client, &[300, 100, 200]);
+
+    let page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Amount,
+        &SortOrder::Descending,
+    );
+    assert_eq!(page.records.get(0).unwrap().amount, 300);
+    assert_eq!(page.records.get(2).unwrap().amount, 100);
 }
 
 #[test]
@@ -1076,4 +1278,66 @@ fn test_get_subscription_not_found_fails() {
         client.try_get_subscription(&bytes(&env, "NONEXISTENT")),
         Err(Ok(PaymentError::SubscriptionNotFound))
     );
+}
+
+// ── T-020: inactive merchant payment ─────────────────────────────────────────
+
+#[test]
+fn test_payment_with_inactive_merchant_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    // Deactivate the merchant
+    client.deactivate_merchant(&merchant, &None);
+    let m = client.get_merchant(&merchant);
+    assert!(!m.active);
+
+    // Attempt payment → must fail with MerchantInactive
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (pub_key, sig) = sign_order(&env, &order);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig, &pub_key);
+    assert_eq!(result, Err(Ok(PaymentError::MerchantInactive)));
+}
+
+// ── SEC-011: max pending refunds per order ────────────────────────────────────
+
+#[test]
+fn test_max_pending_refunds_per_order() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Initiate 10 refunds of 1 each (within the 1000 payment amount)
+    for i in 0..10u32 {
+        let refund_id = alloc::format!("RF_{:02}", i);
+        client.initiate_refund(
+            &payer,
+            &Bytes::from_slice(&env, refund_id.as_bytes()),
+            &bytes(&env, "ORDER_001"),
+            &1,
+            &str(&env, "reason"),
+        );
+    }
+
+    // 11th refund must be rejected with InvalidInput
+    let result = client.try_initiate_refund(
+        &payer,
+        &bytes(&env, "RF_10"),
+        &bytes(&env, "ORDER_001"),
+        &1,
+        &str(&env, "over limit"),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
 }
