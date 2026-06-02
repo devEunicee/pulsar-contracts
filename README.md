@@ -51,7 +51,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 | Tool | Install |
 |---|---|
 | Rust (stable) | https://www.rust-lang.org/tools/install |
-| Stellar CLI | https://developers.stellar.org/docs/tools/stellar-cli |
+| Stellar CLI | https://developers.stellar.org/docs/tools/stellar-cli. |
 | Docker Desktop | https://www.docker.com/products/docker-desktop |
 
 Verify:
