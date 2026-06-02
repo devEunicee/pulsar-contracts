@@ -38,7 +38,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 
 | Feature | Description |
 |---|---|
-| Merchant registry | Register, deactivate, and query merchants |
+| Merchant registry | Register, deactivate, and query merchants. |
 | Signed payments | Process payments verified by ed25519 merchant signature |
 | Refunds | Initiate → Approve/Reject → Execute with 30-day window |
 | Multi-sig | Require N-of-N signers before executing a payment |
@@ -52,7 +52,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 | Tool | Install |
 |---|---|
 | Rust (stable) | https://www.rust-lang.org/tools/install |
-| Stellar CLI | https://developers.stellar.org/docs/tools/stellar-cli |
+| Stellar CLI | https://developers.stellar.org/docs/tools/stellar-cli. |
 | Docker Desktop | https://www.docker.com/products/docker-desktop |
 
 Verify:
@@ -357,6 +357,7 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
 ```
 
 ---
+> **Known Limitation:** The `date_start` and `date_end` parameters for `get_global_payment_stats` are currently a no‑op due to SC‑003. They will be functional once the issue is resolved.
 
 ### Refunds
 
@@ -557,11 +558,21 @@ stellar network container restart local
 
 ---
 
-## Roadmap
+## Rate Limiting and Spam Prevention
 
-See [ROADMAP.md](ROADMAP.md) for planned milestones: v0.1 (current), v0.2 (bug fixes & DX), and v1.0 (production-ready).
+Pulsar is a Soroban smart contract on Stellar. Stellar's fee market provides natural, protocol-level rate limiting:
 
----
+- **Resource fees**: every contract invocation pays a fee proportional to the CPU instructions, memory, and storage it consumes. Spamming `process_payment` or `initiate_refund` from a single account rapidly drains that account's XLM balance.
+- **Surge pricing**: when the network is congested, base fees rise automatically, making bulk spam economically prohibitive.
+- **Sequence number enforcement**: each transaction must use the account's next sequence number, so parallel spam from a single account is serialised by the protocol.
+
+For applications that require stricter per-account throttling (e.g., preventing storage inflation from many small refund initiations), implement rate limiting in an **off-chain API gateway** in front of your contract invocation endpoint:
+
+```
+Client → API Gateway (rate limit: N req/min per account) → Stellar RPC → Contract
+```
+
+A simple token-bucket or sliding-window limiter keyed on the caller's Stellar address is sufficient. Libraries such as `express-rate-limit` (Node.js) or `slowapi` (Python) can be used for this purpose.
 
 ## Contributing
 
