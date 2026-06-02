@@ -73,6 +73,8 @@ pub enum RefundStatus {
     Approved,
     Rejected,
     Completed,
+    /// Payer has escalated a merchant-rejected refund for admin resolution.
+    Disputed,
 }
 
 #[contracttype]
@@ -85,6 +87,8 @@ pub struct RefundRecord {
     pub status: RefundStatus,
     pub initiated_by: Address,
     pub initiated_at: u64,
+    /// Set when the payer disputes a merchant rejection. Empty string if not disputed.
+    pub dispute_reason: String,
 }
 
 // ── Multisig ──────────────────────────────────────────────────────────────────
@@ -107,7 +111,7 @@ pub struct MultisigPayment {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SortField {
     Date,
-    Amount,
+    Amount, // .
 }
 
 #[contracttype]
@@ -133,7 +137,9 @@ pub struct PaymentFilter {
     pub date_end: Option<u64>,
     pub amount_min: Option<i128>,
     pub amount_max: Option<i128>,
-    pub token: Option<Address>,
+    /// Filter by one or more token contract addresses. `None` matches all tokens.
+    /// An empty list also matches all tokens (treated as no filter).
+    pub tokens: Option<Vec<Address>>,
     pub status: StatusFilter,
 }
 
@@ -165,12 +171,57 @@ pub struct AdminConfig {
     pub threshold: u32,
 }
 
+// ── Subscription ──────────────────────────────────────────────────────────────
+
+/// Defines the recurring payment terms for a subscription.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionPlan {
+    /// Payment interval in seconds (e.g. 2_592_000 for 30 days).
+    pub interval: u64,
+    /// Amount charged per interval, in the smallest token unit.
+    pub amount: i128,
+    /// Token contract address used for recurring charges.
+    pub token: Address,
+}
+
+/// Lifecycle state of a subscription.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SubscriptionStatus {
+    Active,
+    Cancelled,
+}
+
+/// Persisted state for a single payer–merchant subscription.
+///
+/// # Off-chain scheduler requirement
+/// Soroban contracts cannot autonomously schedule execution. An off-chain
+/// scheduler service MUST call `process_subscription_payment` at each interval
+/// boundary. The contract enforces correctness (idempotency, interval guard,
+/// status checks) but relies on the scheduler for timely invocation.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionState {
+    /// Unique subscription identifier (caller-supplied).
+    pub subscription_id: Bytes,
+    pub payer: Address,
+    pub merchant: Address,
+    pub plan: SubscriptionPlan,
+    pub status: SubscriptionStatus,
+    /// Ledger timestamp when the subscription was created.
+    pub created_at: u64,
+    /// Ledger timestamp of the most recent successful payment (0 if none yet).
+    pub last_charged_at: u64,
+}
+
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
+    AdminConfig,
     ContractVersion,
     Merchant(Address),
     Payment(Bytes),
@@ -178,15 +229,19 @@ pub enum DataKey {
     MerchantPaymentCount(Address),
     PayerPaymentChunk(Address, u32),
     PayerPaymentCount(Address),
+    /// Flat payment index list per merchant (replaces chunked approach).
+    MerchantPayments(Address),
+    /// Flat payment index list per payer.
+    PayerPayments(Address),
+    /// Global flat payment index.
+    GlobalPaymentIndex,
     Refund(Bytes),
     Multisig(Bytes),
     CleanupPeriod,
     DefaultMultisigExpiry,
-    GlobalPaymentChunk(u32),
-    GlobalPaymentCount,
     GlobalStats,
-    AllPayments,
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
+    OrderRefundCount(Bytes),
 }

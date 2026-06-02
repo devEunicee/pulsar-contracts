@@ -5,6 +5,7 @@ use soroban_sdk::{Address, Bytes, Env, Vec};
 use crate::error::PaymentError;
 use crate::types::{
     AdminConfig, DataKey, GlobalStats, Merchant, MultisigPayment, PaymentRecord, RefundRecord,
+    SubscriptionState,
 };
 
 // ── TTL constants ─────────────────────────────────────────────────────────────
@@ -22,6 +23,14 @@ pub fn get_admin(env: &Env) -> Option<Address> {
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
+}
+
+pub fn get_admin_config(env: &Env) -> Option<AdminConfig> {
+    env.storage().instance().get(&DataKey::AdminConfig)
+}
+
+pub fn set_admin_config(env: &Env, config: &AdminConfig) {
+    env.storage().instance().set(&DataKey::AdminConfig, config);
 }
 
 // ── Contract version ──────────────────────────────────────────────────────────
@@ -88,8 +97,6 @@ pub fn remove_payment(env: &Env, order_id: &Bytes) {
 }
 
 // ── Payment index lists ───────────────────────────────────────────────────────
-
-const CHUNK_SIZE: u32 = 100;
 
 pub fn get_merchant_payment_ids(env: &Env, merchant: &Address) -> Vec<Bytes> {
     let key = DataKey::MerchantPayments(merchant.clone());
@@ -241,6 +248,33 @@ pub fn push_all_refund_id(env: &Env, refund_id: &Bytes) {
         .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
+// ── Per-order pending refund count ────────────────────────────────────────────
+
+pub fn get_order_refund_count(env: &Env, order_id: &Bytes) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OrderRefundCount(order_id.clone()))
+        .unwrap_or(0)
+}
+
+pub fn increment_order_refund_count(env: &Env, order_id: &Bytes) {
+    let count = get_order_refund_count(env, order_id) + 1;
+    let key = DataKey::OrderRefundCount(order_id.clone());
+    env.storage().persistent().set(&key, &count);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+pub fn decrement_order_refund_count(env: &Env, order_id: &Bytes) {
+    let count = get_order_refund_count(env, order_id).saturating_sub(1);
+    let key = DataKey::OrderRefundCount(order_id.clone());
+    env.storage().persistent().set(&key, &count);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
 // ── Multisig ──────────────────────────────────────────────────────────────────
 
 pub fn get_multisig(env: &Env, payment_id: &Bytes) -> Option<MultisigPayment> {
@@ -300,6 +334,8 @@ pub const REFUND_WINDOW: u64 = 2_592_000;
 pub const DEFAULT_MULTISIG_EXPIRY: u64 = 86_400;
 /// Maximum number of signers for a multisig payment
 pub const MAX_SIGNERS: u32 = 10;
+/// Maximum number of pending refunds per order
+pub const MAX_PENDING_REFUNDS: u32 = 10;
 
 pub fn get_cleanup_period(env: &Env) -> u64 {
     env.storage()
@@ -365,4 +401,25 @@ pub fn increment_refund_stats(env: &Env, amount: i128) -> Result<(), PaymentErro
         .ok_or(PaymentError::ArithmeticError)?;
     save_global_stats(env, &stats);
     Ok(())
+}
+
+// ── Subscription ──────────────────────────────────────────────────────────────
+
+pub fn get_subscription(env: &Env, subscription_id: &Bytes) -> Option<SubscriptionState> {
+    let key = DataKey::Subscription(subscription_id.clone());
+    let result = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
+}
+
+pub fn save_subscription(env: &Env, sub: &SubscriptionState) {
+    let key = DataKey::Subscription(sub.subscription_id.clone());
+    env.storage().persistent().set(&key, sub);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
