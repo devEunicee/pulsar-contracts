@@ -71,6 +71,8 @@ pub enum RefundStatus {
     Approved,
     Rejected,
     Completed,
+    /// Payer has escalated a merchant-rejected refund for admin resolution.
+    Disputed,
 }
 
 #[contracttype]
@@ -83,6 +85,8 @@ pub struct RefundRecord {
     pub status: RefundStatus,
     pub initiated_by: Address,
     pub initiated_at: u64,
+    /// Set when the payer disputes a merchant rejection. Empty string if not disputed.
+    pub dispute_reason: String,
 }
 
 // ── Multisig ──────────────────────────────────────────────────────────────────
@@ -171,6 +175,7 @@ pub struct AdminConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
+    AdminConfig,
     ContractVersion,
     Merchant(Address),
     Payment(Bytes),
@@ -178,6 +183,12 @@ pub enum DataKey {
     MerchantPaymentCount(Address),
     PayerPaymentChunk(Address, u32),
     PayerPaymentCount(Address),
+    /// Flat payment index list per merchant (replaces chunked approach).
+    MerchantPayments(Address),
+    /// Flat payment index list per payer.
+    PayerPayments(Address),
+    /// Global flat payment index.
+    GlobalPaymentIndex,
     Refund(Bytes),
     Multisig(Bytes),
     CleanupPeriod,

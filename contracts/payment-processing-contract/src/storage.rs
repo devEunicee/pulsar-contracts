@@ -22,6 +22,14 @@ pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
 }
 
+pub fn get_admin_config(env: &Env) -> Option<AdminConfig> {
+    env.storage().instance().get(&DataKey::AdminConfig)
+}
+
+pub fn set_admin_config(env: &Env, config: &AdminConfig) {
+    env.storage().instance().set(&DataKey::AdminConfig, config);
+}
+
 // ── Contract version ──────────────────────────────────────────────────────────
 
 pub fn get_contract_version(env: &Env) -> u32 {

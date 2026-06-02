@@ -36,12 +36,17 @@ impl PaymentContract {
         if storage::get_admin_config(&env).is_some() || storage::get_admin(&env).is_some() {
             return Err(PaymentError::AdminAlreadySet);
         }
-        helper::validate_admin_address(&env, &admin)?;
-        admin.require_auth();
-        storage::set_admin(&env, &admin);
+        if admins.is_empty() {
+            return Err(PaymentError::InvalidInput);
+        }
+        let first = admins.get(0).unwrap();
+        helper::validate_admin_address(&env, &first)?;
+        first.require_auth();
+        storage::set_admin(&env, &first);
+        storage::set_admin_config(&env, &types::AdminConfig { admins, threshold });
         storage::set_contract_version(&env, 1);
         env.events()
-            .publish((DataKey::Admin,), (String::from_str(&env, "admin_set"), admin));
+            .publish((DataKey::Admin,), (String::from_str(&env, "admin_set"), first));
         Ok(())
     }
 
@@ -137,7 +142,7 @@ impl PaymentContract {
         storage::save_merchant(&env, &merchant);
         env.events().publish(
             (String::from_str(&env, "merchant_deactivated"),),
-            (merchant_address, caller),
+            merchant_address,
         );
         Ok(())
     }
@@ -235,7 +240,7 @@ impl PaymentContract {
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &payer, &order.order_id);
         storage::push_global_payment_id(&env, &order.order_id);
-        storage::increment_payment_stats(&env, order.amount);
+        storage::increment_payment_stats(&env, order.amount)?;
 
         // Commit payment state before the external token transfer to reduce
         // re-entrancy risk in external contracts.
@@ -469,7 +474,7 @@ impl PaymentContract {
             return Err(PaymentError::InvalidInput);
         }
 
-        let record =
+        let mut record =
             storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
 
         if caller != record.payer && caller != record.merchant_address {
@@ -502,6 +507,7 @@ impl PaymentContract {
             status: RefundStatus::Pending,
             initiated_by: caller.clone(),
             initiated_at: now,
+            dispute_reason: String::from_str(&env, ""),
         };
         storage::save_refund(&env, &refund);
         storage::increment_order_refund_count(&env, &order_id);
@@ -787,7 +793,7 @@ impl PaymentContract {
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &executor, &order.order_id);
         storage::push_global_payment_id(&env, &order.order_id);
-        storage::increment_payment_stats(&env, order.amount);
+        storage::increment_payment_stats(&env, order.amount)?;
 
         ms.executed = true;
         storage::save_multisig(&env, &ms);
@@ -795,6 +801,109 @@ impl PaymentContract {
         env.events().publish(
             (String::from_str(&env, "multisig_executed"),),
             (payment_id, executor, order.amount),
+        );
+        Ok(())
+    }
+
+    // ── Dispute resolution ────────────────────────────────────────────────────
+
+    /// Escalate a merchant-rejected refund to admin arbitration.
+    ///
+    /// Only the original payer may call this, and only when the refund is in
+    /// `Rejected` state. Transitions the refund to `Disputed` and persists the
+    /// dispute reason. Emits `refund_disputed`.
+    pub fn dispute_refund(
+        env: Env,
+        caller: Address,
+        refund_id: Bytes,
+        reason: String,
+    ) -> Result<(), PaymentError> {
+        caller.require_auth();
+
+        if reason.len() > 256 {
+            return Err(PaymentError::InvalidInput);
+        }
+
+        let mut refund =
+            storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
+
+        // Only the original payer may dispute.
+        if caller != refund.initiated_by {
+            return Err(PaymentError::DisputeUnauthorized);
+        }
+
+        // Refund must be in Rejected state.
+        if refund.status != RefundStatus::Rejected {
+            return Err(PaymentError::RefundNotRejected);
+        }
+
+        refund.status = RefundStatus::Disputed;
+        refund.dispute_reason = reason.clone();
+        storage::save_refund(&env, &refund);
+
+        env.events().publish(
+            (String::from_str(&env, "refund_disputed"),),
+            (refund_id, caller, reason),
+        );
+        Ok(())
+    }
+
+    /// Admin-only: resolve a disputed refund.
+    ///
+    /// - `approve = true`  → override the merchant rejection, execute payout to
+    ///   payer, and mark the refund `Completed`.
+    /// - `approve = false` → uphold the merchant rejection, mark the refund
+    ///   `Rejected` (closed), no payout.
+    ///
+    /// Emits `dispute_resolved` with the resolver identity and outcome.
+    pub fn resolve_dispute(
+        env: Env,
+        admins: Vec<Address>,
+        refund_id: Bytes,
+        approve: bool,
+    ) -> Result<(), PaymentError> {
+        helper::require_multi_admin(&env, admins.clone())?;
+
+        let mut refund =
+            storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
+
+        if refund.status != RefundStatus::Disputed {
+            return Err(PaymentError::RefundNotDisputed);
+        }
+
+        let mut record = storage::get_payment(&env, &refund.order_id)
+            .ok_or(PaymentError::PaymentNotFound)?;
+
+        // Identify the resolving admin for event metadata.
+        let resolver = admins.get(0).unwrap();
+
+        if approve {
+            // Execute payout: merchant → payer.
+            let new_total = record.refunded_amount + refund.amount;
+            record.refunded_amount = new_total;
+            record.status = if new_total == record.amount {
+                PaymentStatus::FullyRefunded
+            } else {
+                PaymentStatus::PartiallyRefunded
+            };
+            storage::save_payment(&env, &record);
+
+            refund.status = RefundStatus::Completed;
+            storage::save_refund(&env, &refund);
+            storage::push_all_refund_id(&env, &refund_id);
+            storage::increment_refund_stats(&env, refund.amount)?;
+
+            let token_client = token::Client::new(&env, &record.token);
+            token_client.transfer(&record.merchant_address, &record.payer, &refund.amount);
+        } else {
+            // Uphold rejection — close the dispute with no payout.
+            refund.status = RefundStatus::Rejected;
+            storage::save_refund(&env, &refund);
+        }
+
+        env.events().publish(
+            (String::from_str(&env, "dispute_resolved"),),
+            (refund_id, resolver, approve),
         );
         Ok(())
     }
@@ -867,22 +976,6 @@ impl PaymentContract {
         })
     }
 }
-ending => v1.cmp(&v2),
-                SortOrder::Descending => v2.cmp(&v1),
-            }
-        });
-
-        let next_cursor = if records.len() > cap {
-            records.get(cap - 1).map(|r| r.order_id.clone())
-        } else {
-            None
-        };
-
-        // Truncate to cap and convert back to Soroban Vec
-        let mut page: Vec<PaymentRecord> = Vec::new(env);
-        for i in 0..(records.len().min(cap)) {
-            page.push_back(records[i].clone());
-        }
 
         Ok(PaymentPage {
             records: page,
