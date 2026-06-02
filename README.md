@@ -313,7 +313,9 @@ stellar contract invoke --id $CONTRACT_ID --source-account <MERCHANT_KEY> --netw
   --category Retail
 ```
 
-Categories: `Retail` | `Food` | `Services` | `Digital` | `Other`
+**Categories**: `Retail` | `Food` | `Services` | `Digital` | `Other`
+
+**Note on Category Management**: Merchant categories are currently implemented as a fixed enum. Adding new categories requires a contract upgrade. See [CATEGORY_MIGRATION_GUIDE.md](docs/CATEGORY_MIGRATION_GUIDE.md) for the migration procedure and [ADR-0004](docs/adr/0004-merchant-category-management.md) for the design rationale.
 
 #### `deactivate_merchant`
 
