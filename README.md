@@ -137,6 +137,41 @@ cargo test test_initiate_multisig_payment_success
 
 ## Local Network
 
+### Option A — Docker Compose (recommended)
+
+The fastest way to get a fully reproducible local environment with no manual
+tool installation.
+
+**Prerequisites:** Docker Desktop (or Docker Engine + Compose plugin).
+
+```bash
+# 1. Start the local Stellar network and the dev container
+docker compose up -d
+
+# 2. Open a shell inside the dev container
+docker compose exec dev bash
+
+# 3. Inside the container — build the contract
+cargo build --target wasm32-unknown-unknown --release
+
+# 4. Deploy to the local network
+stellar contract deploy \
+  --wasm target/wasm32-unknown-unknown/release/payment_processing_contract.wasm \
+  --source-account <YOUR_SECRET_KEY> \
+  --network local
+```
+
+Save the returned contract ID as `CONTRACT_ID`.
+
+Horizon is available at `http://localhost:8000` on your host machine.
+
+```bash
+# Stop everything when done
+docker compose down
+```
+
+### Option B — Native (manual)
+
 ```bash
 # Start Docker Desktop, then:
 stellar network container start local
