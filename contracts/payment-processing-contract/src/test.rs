@@ -619,6 +619,23 @@ fn test_approve_refund_unauthorized_fails() {
 }
 
 #[test]
+fn test_initiate_refund_unauthorized_fails() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+    let stranger = Address::generate(&env);
+
+    let result = client.try_initiate_refund(
+        &stranger,
+        &bytes(&env, "REFUND_001"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "Unauthorized refund attempt"),
+    );
+
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
 fn test_refund_exceeds_payment_fails() {
     let (env, client) = setup();
     let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);

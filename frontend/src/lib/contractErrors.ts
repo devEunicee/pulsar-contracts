@@ -1,4 +1,3 @@
-/** Maps Pulsar contract error codes (BE-006) to human-readable messages. */
 export const CONTRACT_ERRORS: Record<number, string> = {
   1: "Unauthorized: you don't have permission to perform this action.",
   2: "Admin already set.",

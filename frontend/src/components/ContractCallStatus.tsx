@@ -26,12 +26,7 @@ export function SuccessBanner({ txHash }: { txHash: string }) {
   return (
     <div role="status" className="rounded-md bg-green-50 dark:bg-green-900/30 border border-green-300 dark:border-green-700 p-3 text-sm text-green-700 dark:text-green-300">
       Transaction submitted!{" "}
-      <a
-        href={`${EXPLORER_BASE}/${txHash}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="underline font-medium"
-      >
+      <a href={`${EXPLORER_BASE}/${txHash}`} target="_blank" rel="noopener noreferrer" className="underline font-medium">
         View on Stellar Explorer ↗
       </a>
     </div>
