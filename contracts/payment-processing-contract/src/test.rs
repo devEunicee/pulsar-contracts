@@ -39,6 +39,24 @@ fn sign_order(env: &Env, order: &PaymentOrder) -> (BytesN<32>, BytesN<64>) {
     )
 }
 
+/// Sign the full XDR-serialised order — matches what the contract actually
+/// verifies in `process_payment_with_signature`.
+fn sign_order_xdr(env: &Env, order: &PaymentOrder, seed: &[u8; 32]) -> (BytesN<32>, BytesN<64>) {
+    let signing_key = SigningKey::from_bytes(seed);
+    let public_key = signing_key.verifying_key();
+
+    let xdr_bytes = order.clone().to_xdr(env);
+    let mut payload_bytes = vec![0u8; xdr_bytes.len() as usize];
+    xdr_bytes.copy_into_slice(&mut payload_bytes);
+
+    let signature = signing_key.sign(&payload_bytes);
+
+    (
+        BytesN::from_array(env, &public_key.to_bytes()),
+        BytesN::from_array(env, &signature.to_bytes()),
+    )
+}
+
 fn setup() -> (Env, PaymentContractClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
@@ -1680,4 +1698,101 @@ fn test_payment_negative_amount_fails() {
         &BytesN::from_array(&env, &[0u8; 32]),
     );
     assert_eq!(result, Err(Ok(PaymentError::InvalidAmount)));
+}
+
+// ── T-001: Real ed25519 key-pair signature tests ──────────────────────────────
+
+/// Registers a merchant with a real ed25519 public key, signs the full XDR
+/// payload with the matching private key, and asserts the payment succeeds.
+/// `mock_all_auths` is intentionally NOT used here so the signature path is
+/// exercised end-to-end.
+#[test]
+fn test_real_ed25519_valid_signature_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths(); // auth mocked; signature verification is NOT mocked
+    let contract_id = env.register_contract(None, PaymentContract);
+    let client = PaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    // Generate a real ed25519 key pair
+    let seed = [42u8; 32];
+    let signing_key = SigningKey::from_bytes(&seed);
+    let pub_key_bytes = signing_key.verifying_key().to_bytes();
+    let merchant_pub_key: BytesN<32> = BytesN::from_array(&env, &pub_key_bytes);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    // Register merchant WITH the real public key stored on-chain
+    client.register_merchant(
+        &merchant,
+        &str(&env, "RealSigStore"),
+        &str(&env, "desc"),
+        &str(&env, "real@store.com"),
+        &MerchantCategory::Retail,
+        &Some(merchant_pub_key.clone()),
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let order = make_order(&env, &merchant, &payer, &token);
+
+    // Sign the full XDR payload — exactly what the contract verifies
+    let (_, sig) = sign_order_xdr(&env, &order, &seed);
+
+    // Payment must succeed with a valid real signature
+    client.process_payment_with_signature(&payer, &order, &sig, &merchant_pub_key);
+
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.amount, 1000);
+    assert_eq!(record.status, PaymentStatus::Completed);
+}
+
+/// Registers a merchant with a real ed25519 public key, tampers with the
+/// signature, and asserts `InvalidSignature` (or a host crypto error) is
+/// returned. `mock_all_auths` is intentionally NOT used here.
+#[test]
+fn test_real_ed25519_tampered_signature_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, PaymentContract);
+    let client = PaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    let seed = [42u8; 32];
+    let signing_key = SigningKey::from_bytes(&seed);
+    let pub_key_bytes = signing_key.verifying_key().to_bytes();
+    let merchant_pub_key: BytesN<32> = BytesN::from_array(&env, &pub_key_bytes);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "RealSigStore"),
+        &str(&env, "desc"),
+        &str(&env, "real@store.com"),
+        &MerchantCategory::Retail,
+        &Some(merchant_pub_key.clone()),
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let order = make_order(&env, &merchant, &payer, &token);
+
+    // Produce a valid signature then flip one byte to tamper it
+    let (_, valid_sig) = sign_order_xdr(&env, &order, &seed);
+    let mut sig_bytes = valid_sig.to_array();
+    sig_bytes[0] ^= 0xFF; // corrupt first byte
+    let tampered_sig: BytesN<64> = BytesN::from_array(&env, &sig_bytes);
+
+    // The contract must reject the tampered signature
+    let result =
+        client.try_process_payment_with_signature(&payer, &order, &tampered_sig, &merchant_pub_key);
+    assert!(
+        result.is_err(),
+        "Expected error for tampered signature, got Ok"
+    );
 }
