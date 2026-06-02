@@ -28,6 +28,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
   - [Admin Config](#admin-config)
 - [Events](#events)
 - [Error Codes](#error-codes)
+- [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
 
