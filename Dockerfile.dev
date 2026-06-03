@@ -1,0 +1,24 @@
+FROM rust:1.79-bookworm
+
+# Install Stellar CLI and build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Stellar CLI
+RUN curl -sSL https://raw.githubusercontent.com/stellar/stellar-cli/main/install.sh | bash
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Add WASM target
+RUN rustup target add wasm32-unknown-unknown
+
+# Install cargo tools
+RUN cargo install cargo-audit --version 0.21.2 --locked
+
+WORKDIR /workspace
+
+CMD ["bash"]

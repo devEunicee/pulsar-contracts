@@ -32,6 +32,10 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
 
+      - name: Get rustc version
+        id: rustc-version
+        run: echo "version=$(rustc --version | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -39,11 +43,16 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.toolchain }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.toolchain }}-
+          key: ${{ runner.os }}-cargo-${{ matrix.toolchain }}-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.toolchain }}-${{ steps.rustc-version.outputs.version }}-
+            ${{ runner.os }}-cargo-${{ matrix.toolchain }}-
 
       - name: Check formatting
         run: cargo fmt --all -- --check
+
+      - name: Check license headers
+        run: bash scripts/check-license-headers.sh
 
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -64,6 +73,10 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Get rustc version
+        id: rustc-version
+        run: echo "version=$(rustc --version | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -71,12 +84,33 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-wasm-
+          key: ${{ runner.os }}-cargo-wasm-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-${{ steps.rustc-version.outputs.version }}-
+            ${{ runner.os }}-cargo-wasm-
 
       - name: Build WASM
         run: cargo build --target wasm32-unknown-unknown --release --locked
         working-directory: contracts/payment-processing-contract
+
+      - name: Check WASM binary size
+        run: |
+          WASM=target/wasm32-unknown-unknown/release/payment_processing_contract.wasm
+          SIZE=$(wc -c < "$WASM")
+          SIZE_KB=$(( SIZE / 1024 ))
+          echo "## WASM Size Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "| File | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| payment_processing_contract.wasm | ${SIZE_KB} KB (${SIZE} bytes) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "WASM size: ${SIZE_KB} KB (${SIZE} bytes)"
+          if [ "$SIZE" -gt 102400 ]; then
+            echo "::error::WASM binary exceeds 100 KB limit (${SIZE_KB} KB). Reduce contract size before merging."
+            exit 1
+          elif [ "$SIZE" -gt 81920 ]; then
+            echo "::warning::WASM binary is above 80 KB warning threshold (${SIZE_KB} KB). Consider reducing contract size."
+          else
+            echo "WASM size is within limits."
+          fi
 
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v4
@@ -98,6 +132,10 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Get rustc version
+        id: rustc-version
+        run: echo "version=$(rustc --version | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -105,8 +143,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-wasm-
+          key: ${{ runner.os }}-cargo-wasm-${{ steps.rustc-version.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-${{ steps.rustc-version.outputs.version }}-
+            ${{ runner.os }}-cargo-wasm-
 
       - name: Build WASM
         run: cargo build --target wasm32-unknown-unknown --release --locked
@@ -123,6 +163,53 @@ jobs:
           files: |
             target/wasm32-unknown-unknown/release/payment_processing_contract.wasm
             target/wasm32-unknown-unknown/release/payment_processing_contract.wasm.sha256
+
+  coverage:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-coverage-
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --version 0.6.13 --locked
+
+      - name: Generate coverage report
+        run: cargo llvm-cov --all-features --locked --lcov --output-path lcov.info
+        working-directory: contracts/payment-processing-contract
+
+      - name: Upload coverage report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: contracts/payment-processing-contract/lcov.info
+          retention-days: 30
+
+      - name: Check minimum line coverage (80% — warning only)
+        run: |
+          COVERAGE=$(cargo llvm-cov --all-features --locked --summary-only 2>&1 \
+            | grep -E '^TOTAL' | awk '{print $10}' | tr -d '%')
+          echo "Line coverage: ${COVERAGE}%"
+          if [ -n "$COVERAGE" ] && [ "$(echo "$COVERAGE < 80" | bc -l)" = "1" ]; then
+            echo "::warning::Line coverage ${COVERAGE}% is below the 80% threshold. Please add tests."
+          else
+            echo "Coverage threshold met: ${COVERAGE}%"
+          fi
+        working-directory: contracts/payment-processing-contract
 
   security-audit:
     name: Security Audit
@@ -147,3 +234,56 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+
+  deploy-testnet:
+    name: Deploy to Testnet
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: testnet
+    outputs:
+      contract_id: ${{ steps.deploy.outputs.contract_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download WASM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: payment-processing-contract.wasm
+          path: target/wasm32-unknown-unknown/release/
+
+      - name: Install Stellar CLI
+        run: |
+          curl -sSL https://github.com/stellar/stellar-cli/releases/latest/download/stellar-cli-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C /usr/local/bin stellar
+
+      - name: Deploy contract
+        id: deploy
+        env:
+          TESTNET_SECRET: ${{ secrets.TESTNET_SECRET_KEY }}
+        run: |
+          CONTRACT_ID=$(stellar contract deploy \
+            --wasm target/wasm32-unknown-unknown/release/payment_processing_contract.wasm \
+            --source-account "$TESTNET_SECRET" \
+            --network testnet)
+          echo "contract_id=$CONTRACT_ID" >> "$GITHUB_OUTPUT"
+
+  smoke-test:
+    name: Smoke Test (Testnet)
+    runs-on: ubuntu-latest
+    needs: deploy-testnet
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Stellar CLI
+        run: |
+          curl -sSL https://github.com/stellar/stellar-cli/releases/latest/download/stellar-cli-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C /usr/local/bin stellar
+
+      - name: Run smoke test
+        env:
+          CONTRACT_ID: ${{ needs.deploy-testnet.outputs.contract_id }}
+          ADMIN_SECRET: ${{ secrets.TESTNET_SECRET_KEY }}
+          NETWORK: testnet
+        run: bash scripts/smoke-test.sh
