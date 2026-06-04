@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing! Pulsar is an open-source project and we welcome contributions of all kinds.
 
+By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Getting Started
 
 1. Fork the repository and clone your fork.

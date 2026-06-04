@@ -32,6 +32,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 - [Error Codes](#error-codes)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
+- [Code of Conduct](#code-of-conduct)
 - [License](#license)
 
 ---
@@ -94,6 +95,7 @@ pulsar-contracts/
 │           └── test.rs             # Unit tests (soroban testutils)
 ├── Cargo.toml                      # Workspace manifest
 ├── .gitignore
+├── CODE_OF_CONDUCT.md              # Community guidelines
 ├── CONTRIBUTING.md
 ├── LICENSE
 └── README.md
@@ -843,6 +845,12 @@ A simple token-bucket or sliding-window limiter keyed on the caller's Stellar ad
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## Code of Conduct
+
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ---
 
