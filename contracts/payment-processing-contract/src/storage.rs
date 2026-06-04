@@ -357,8 +357,52 @@ pub fn set_whitelisted(env: &Env, address: &Address, approved: bool) {
 
 /// Default cleanup period: 90 days in seconds
 pub const DEFAULT_CLEANUP_PERIOD: u64 = 7_776_000;
-/// Refund window: 30 days in seconds
+
+/// Refund eligibility window: 30 days in seconds.
+///
+/// # Timestamp trust model
+///
+/// The refund deadline is computed as `paid_at + REFUND_WINDOW + REFUND_GRACE_BUFFER`,
+/// where `paid_at` and the current time (`now`) are both sourced from
+/// `env.ledger().timestamp()`.
+///
+/// **Why timestamps, not ledger sequence numbers?**
+/// Stellar ledger sequence numbers increment by 1 per closed ledger, but the
+/// wall-clock duration of each ledger varies (typically 5–7 s, but not
+/// guaranteed). Converting a 30-day window into a fixed sequence-number delta
+/// would require assuming a constant close time; any deviation accumulates
+/// drift that could silently shorten or extend the window. Because `paid_at`
+/// already stores a Unix timestamp, using timestamps for the deadline check is
+/// the only consistent approach.
+///
+/// **Validator-provided timestamps and their bounds**
+/// `env.ledger().timestamp()` returns the `close_time` field of the ledger
+/// header, which is set by the validator quorum. The Stellar Consensus Protocol
+/// requires that each ledger's `close_time` is strictly greater than the
+/// previous ledger's `close_time`, so timestamps are monotonically increasing.
+/// However, they are *not* guaranteed to match wall-clock time exactly:
+/// validators may set `close_time` up to a small number of seconds ahead of or
+/// behind real time. In practice the drift is well under a minute, but callers
+/// should not rely on sub-minute precision.
+///
+/// **Abuse resistance**
+/// Because timestamps are monotonically increasing and the grace buffer is
+/// only 1 hour (small relative to the 30-day window), a validator cannot
+/// meaningfully extend refund eligibility by manipulating `close_time` without
+/// violating consensus rules. The grace buffer is sized to absorb legitimate
+/// network timing variance, not to provide a meaningful extension of the window.
 pub const REFUND_WINDOW: u64 = 2_592_000;
+
+/// Grace buffer added to the refund deadline: 1 hour in seconds.
+///
+/// A refund is accepted when `now <= paid_at + REFUND_WINDOW + REFUND_GRACE_BUFFER`.
+///
+/// The 1-hour buffer absorbs minor timestamp drift near the deadline boundary
+/// (e.g., a refund submitted seconds before midnight on day 30 that lands in a
+/// ledger whose `close_time` is a few seconds past the nominal deadline). It
+/// does not meaningfully extend the 30-day window from a user perspective.
+pub const REFUND_GRACE_BUFFER: u64 = 3_600;
+
 /// Default multisig expiry: 24 hours in seconds
 pub const DEFAULT_MULTISIG_EXPIRY: u64 = 86_400;
 /// Maximum number of signers for a multisig payment

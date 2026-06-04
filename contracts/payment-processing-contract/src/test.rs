@@ -452,6 +452,126 @@ fn test_refund_window_expired_fails() {
     );
 }
 
+// ── Refund window edge-case tests ─────────────────────────────────────────────
+
+/// Refund well within the 30-day window (day 15) — must succeed.
+#[test]
+fn test_refund_well_within_window_succeeds() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Day 15: 15 * 86_400 = 1_296_000
+    env.ledger().with_mut(|l| l.timestamp = 1_296_000);
+
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_MID"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "Mid-window refund"),
+    );
+    let status = client.get_refund_status(&bytes(&env, "REFUND_MID"));
+    assert_eq!(status, RefundStatus::Pending);
+}
+
+/// Refund exactly at the nominal 30-day deadline (paid_at + REFUND_WINDOW) — must succeed.
+#[test]
+fn test_refund_exactly_at_nominal_deadline_succeeds() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // paid_at = 0 (default ledger timestamp in tests), deadline = 2_592_000
+    env.ledger().with_mut(|l| l.timestamp = 2_592_000);
+
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_EXACT"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "Exactly at deadline"),
+    );
+    let status = client.get_refund_status(&bytes(&env, "REFUND_EXACT"));
+    assert_eq!(status, RefundStatus::Pending);
+}
+
+/// Refund 1 second past the nominal deadline but within the grace buffer — must succeed.
+#[test]
+fn test_refund_within_grace_buffer_succeeds() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // 1 second past nominal deadline, still inside the 1-hour grace buffer
+    env.ledger().with_mut(|l| l.timestamp = 2_592_001);
+
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_GRACE"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "Inside grace buffer"),
+    );
+    let status = client.get_refund_status(&bytes(&env, "REFUND_GRACE"));
+    assert_eq!(status, RefundStatus::Pending);
+}
+
+/// Refund exactly at the end of the grace buffer (paid_at + REFUND_WINDOW + REFUND_GRACE_BUFFER) — must succeed.
+#[test]
+fn test_refund_at_grace_buffer_boundary_succeeds() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Exactly at the last valid second: 2_592_000 + 3_600 = 2_595_600
+    env.ledger().with_mut(|l| l.timestamp = 2_595_600);
+
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_BOUNDARY"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "At grace boundary"),
+    );
+    let status = client.get_refund_status(&bytes(&env, "REFUND_BOUNDARY"));
+    assert_eq!(status, RefundStatus::Pending);
+}
+
+/// Refund 1 second past the grace buffer — must be rejected.
+#[test]
+fn test_refund_one_second_past_grace_buffer_fails() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // 1 second past the grace buffer: 2_592_000 + 3_600 + 1 = 2_595_601
+    env.ledger().with_mut(|l| l.timestamp = 2_595_601);
+
+    let result = client.try_initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_LATE"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "Just past grace"),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::RefundWindowExpired)));
+}
+
+/// Refund long after the window (day 60) — must be rejected.
+#[test]
+fn test_refund_long_after_window_fails() {
+    let (env, client) = setup();
+    let (_admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Day 60: 60 * 86_400 = 5_184_000
+    env.ledger().with_mut(|l| l.timestamp = 5_184_000);
+
+    let result = client.try_initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_OLD"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "Way too late"),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::RefundWindowExpired)));
+}
+
 #[test]
 fn test_reject_refund() {
     let (env, client) = setup();

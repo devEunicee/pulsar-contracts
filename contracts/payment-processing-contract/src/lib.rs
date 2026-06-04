@@ -20,7 +20,7 @@ use soroban_sdk::{
 };
 
 use error::PaymentError;
-use storage::REFUND_WINDOW;
+use storage::{REFUND_GRACE_BUFFER, REFUND_WINDOW};
 use types::{
     DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
     PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
@@ -697,7 +697,13 @@ impl PaymentContract {
             return Err(PaymentError::Unauthorized);
         }
         let now = env.ledger().timestamp();
-        if now > record.paid_at + REFUND_WINDOW {
+        // Deadline = paid_at + 30-day window + 1-hour grace buffer.
+        // The grace buffer absorbs minor ledger timestamp drift near the boundary
+        // so that legitimate refunds submitted just before the deadline are not
+        // rejected due to a few seconds of validator clock variance.
+        // See storage::REFUND_WINDOW and storage::REFUND_GRACE_BUFFER for the
+        // full trust-model rationale.
+        if now > record.paid_at + REFUND_WINDOW + REFUND_GRACE_BUFFER {
             return Err(PaymentError::RefundWindowExpired);
         }
         let new_total = record.refunded_amount + record.pending_refund_amount + amount;

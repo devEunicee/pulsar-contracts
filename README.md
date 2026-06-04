@@ -57,7 +57,7 @@ Practical guidance:
 |---|---|
 | Merchant registry | Register, deactivate, and query merchants. |
 | Signed payments | Process payments verified by ed25519 merchant signature |
-| Refunds | Initiate → Approve/Reject → Execute with 30-day window |
+| Refunds | Initiate → Approve/Reject → Execute with 30-day window + 1-hour grace buffer |
 | Multi-sig | Require N-of-N signers before executing a payment |
 | History queries | Cursor-based pagination with filtering and sorting |
 | Global stats | Admin-only aggregate payment and refund statistics |
@@ -506,7 +506,27 @@ stellar contract invoke --id $CONTRACT_ID --source-account <MERCHANT_KEY> --netw
 
 ### Refunds
 
-Refund window: **30 days** from `paid_at`. Partial refunds are allowed; cumulative refunds cannot exceed the original amount.
+Refund window: **30 days + 1-hour grace buffer** from `paid_at`. Partial refunds are allowed; cumulative refunds cannot exceed the original amount.
+
+#### Timestamp trust model
+
+Refund eligibility is enforced using `env.ledger().timestamp()`, which returns the `close_time` field of the Stellar ledger header set by the validator quorum.
+
+**Why not ledger sequence numbers?**
+Ledger sequence numbers increment by 1 per closed ledger, but the wall-clock duration of each ledger varies (typically 5–7 s, not guaranteed). Converting a 30-day window into a fixed sequence-number delta would require assuming a constant close time; any deviation accumulates drift that could silently shorten or extend the window. Because `paid_at` already stores a Unix timestamp, using timestamps for the deadline check is the only consistent approach.
+
+**Validator-provided timestamps**
+The Stellar Consensus Protocol requires each ledger's `close_time` to be strictly greater than the previous ledger's `close_time`, so timestamps are monotonically increasing. They are *not* guaranteed to match wall-clock time exactly — validators may set `close_time` a small number of seconds ahead of or behind real time. In practice the drift is well under a minute.
+
+**Grace buffer**
+A 1-hour grace buffer (`REFUND_GRACE_BUFFER = 3600 s`) is added to the deadline:
+
+```
+deadline = paid_at + REFUND_WINDOW + REFUND_GRACE_BUFFER
+         = paid_at + 2_592_000   + 3_600
+```
+
+This absorbs minor timestamp drift near the boundary (e.g., a refund submitted seconds before midnight on day 30 that lands in a ledger whose `close_time` is a few seconds past the nominal deadline). The buffer is sized to accommodate expected network timing variance, not to provide a meaningful extension of the 30-day window. Because validator timestamps are monotonically increasing and the buffer is small relative to the window, it does not create a meaningful abuse surface.
 
 #### `initiate_refund`
 
