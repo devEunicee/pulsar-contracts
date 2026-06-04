@@ -131,6 +131,15 @@ fn test_get_version_after_set_admin() {
     assert_eq!(client.get_version(), 1);
 }
 
+#[test]
+fn test_ping() {
+    let (env, client) = setup();
+    env.ledger().with_mut(|li| {
+        li.timestamp = 12345;
+    });
+    assert_eq!(client.ping(), 12345);
+}
+
 // ── Merchant tests ────────────────────────────────────────────────────────────
 
 #[test]
