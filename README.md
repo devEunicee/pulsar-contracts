@@ -216,6 +216,15 @@ stellar contract invoke --id $CONTRACT_ID --source-account <KEY> --network local
   -- get_version
 ```
 
+#### `ping`
+
+Health check endpoint. Returns the current ledger timestamp (u64).
+
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <KEY> --network local \
+  -- ping
+```
+
 #### `upgrade`
 
 Upgrades the contract WASM in-place. Admin only. Existing storage and contract address are preserved.

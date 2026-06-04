@@ -57,6 +57,13 @@ impl PaymentContract {
         storage::get_contract_version(&env)
     }
 
+    // ── Health check ──────────────────────────────────────────────────────────
+
+    /// Health check endpoint. Returns the current ledger timestamp.
+    pub fn ping(env: Env) -> u64 {
+        env.ledger().timestamp()
+    }
+
     // ── Merchant management ───────────────────────────────────────────────────
 
     pub fn register_merchant(
