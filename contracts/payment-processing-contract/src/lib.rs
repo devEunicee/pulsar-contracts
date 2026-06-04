@@ -10,8 +10,6 @@ mod storage;
 mod types;
 
 #[cfg(test)]
-mod test;
-#[cfg(test)]
 mod repro_tests;
 #[cfg(test)]
 mod prop_tests;
@@ -832,10 +830,8 @@ impl PaymentContract {
         storage::save_payment(&env, &record);
         storage::decrement_order_refund_count(&env, &refund.order_id);
 
-        env.events().publish(
-            (String::from_str(&env, "refund_rejected"),),
-            refund_id,
-        );
+        env.events()
+            .publish((String::from_str(&env, "refund_rejected"),), refund_id);
         Ok(())
     }
 
