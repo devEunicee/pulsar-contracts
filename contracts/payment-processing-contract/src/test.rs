@@ -864,6 +864,61 @@ fn test_multisig_insufficient_signatures_fails() {
 }
 
 #[test]
+fn test_get_multisig_payment_access_control_and_state() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &signer1, 5000);
+
+    let order = PaymentOrder {
+        order_id: bytes(&env, "MS_GET"),
+        merchant_address: merchant.clone(),
+        payer: signer1.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "Multisig query order"),
+        expires_at: 0,
+    };
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2.clone());
+
+    client.initiate_multisig_payment(&signer1, &bytes(&env, "MS_GET"), &order, &signers);
+
+    let ms_before = client.get_multisig_payment(&signer1, &bytes(&env, "MS_GET"));
+    assert_eq!(ms_before.required_signers.len(), 2);
+    assert_eq!(ms_before.signatures.len(), 0);
+    assert!(!ms_before.executed);
+
+    let ms_admin = client.get_multisig_payment(&admin, &bytes(&env, "MS_GET"));
+    assert_eq!(ms_admin.required_signers.len(), 2);
+    assert_eq!(ms_admin.signatures.len(), 0);
+
+    let unauthorized_result = client.try_get_multisig_payment(&outsider, &bytes(&env, "MS_GET"));
+    assert_eq!(unauthorized_result, Err(Ok(PaymentError::Unauthorized)));
+
+    client.sign_multisig_payment(&signer1, &bytes(&env, "MS_GET"));
+    let ms_after = client.get_multisig_payment(&signer2, &bytes(&env, "MS_GET"));
+    assert_eq!(ms_after.signatures.len(), 1);
+    assert!(ms_after.signatures.contains(&signer1));
+}
+
+#[test]
 fn test_initiate_multisig_duplicate_signer_fails() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
