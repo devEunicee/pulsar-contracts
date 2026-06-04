@@ -35,6 +35,20 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
 - [Code of Conduct](#code-of-conduct)
 - [License](#license)
 
+## Storage Costs
+
+- **Overview:** Each on-chain operation that creates or updates contract storage consumes ledger entries and affects the network reserve. Actual XLM cost depends on the Stellar/Soroban network parameters (base reserve, entry pricing) at deployment time; the estimates below are for planning only.
+- **Register merchant:** creates one merchant ledger entry. Estimated cost: ~0.5 XLM (network-dependent).
+- **Process payment:** creates a `Payment` record and appends to merchant, payer and global indexes (so ~4 ledger entries). Estimated cost: ~2.0 XLM total (4 × ~0.5 XLM).
+- **Initiate refund:** creates a `Refund` record: ~0.5 XLM.
+- **Multi-signature payment:** creates a `MultisigPayment` entry: ~0.5 XLM.
+- **Whitelist toggle / admin config changes:** typically create/update a small number of entries: ~0.5 XLM per new entry.
+
+Practical guidance:
+- Minimise history growth by using the `archive_payment_record` API to remove full `Payment` objects from hot storage. Note: archived `order_id`s are preserved as tombstones to prevent replay — tombstones are inexpensive but intentionally kept to prevent signature replay attacks.
+- For integrations that expect heavy throughput, budget for index growth (merchant/payer/global lists) and consider periodic compaction or off-chain indexing.
+- Always verify current network base reserves before deployment; use the Stellar/Soroban network RPC or SDK to compute exact costs for your target environment.
+
 ---
 
 ## Overview
