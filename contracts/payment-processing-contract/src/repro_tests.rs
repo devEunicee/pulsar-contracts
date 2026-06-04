@@ -7,7 +7,7 @@ use alloc::vec;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token::StellarAssetClient,
-    Address, Bytes, Env, String, Vec, BytesN,
+    vec as svec, Address, Bytes, BytesN, Env, String, Vec,
 };
 
 use crate::{
@@ -50,6 +50,7 @@ fn make_order(env: &Env, merchant: &Address, payer: &Address, token: &Address) -
         amount: 1000,
         description: str(env, "Test order"),
         expires_at: 0,
+        metadata: None,
     }
 }
 
@@ -62,7 +63,7 @@ fn test_approve_refund_unauthorized_fails() {
     let stranger = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.set_admin(&svec![&env, admin.clone()], &1);
     client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail, &None);
     mint(&env, &token, &admin, &payer, 1000);
 
@@ -83,7 +84,7 @@ fn test_initiate_multisig_duplicate_signer_fails() {
     let signer1 = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.set_admin(&svec![&env, admin.clone()], &1);
     client.register_merchant(
         &merchant,
         &str(&env, "Store"),
@@ -102,6 +103,7 @@ fn test_initiate_multisig_duplicate_signer_fails() {
         amount: 1000,
         description: str(&env, "Multisig order"),
         expires_at: 0,
+        metadata: None,
     };
 
     let mut signers = Vec::new(&env);
@@ -120,7 +122,7 @@ fn test_pagination_cursor_inverted() {
     let payer = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.set_admin(&svec![&env, admin.clone()], &1);
     client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail, &None);
     mint(&env, &token, &admin, &payer, 10000);
 
@@ -155,8 +157,8 @@ fn test_initiate_multisig_max_signers_exceeded() {
     let payer = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
-    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail);
+    client.set_admin(&svec![&env, admin.clone()], &1);
+    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail, &None);
     mint(&env, &token, &admin, &payer, 1000);
 
     let mut signers = Vec::new(&env);

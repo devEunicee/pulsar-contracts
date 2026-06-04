@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Bytes, BytesN, Env, String};
+use soroban_sdk::{xdr::ToXdr, Address, Bytes, BytesN, Env, String, Vec};
 
 use crate::error::PaymentError;
 use crate::storage;
@@ -14,13 +14,57 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
     Ok(())
 }
 
+/// Require that every address in `admins` is a registered admin, and the threshold is met.
+pub fn require_multi_admin(env: &Env, admins: Vec<Address>) -> Result<(), PaymentError> {
+    if admins.is_empty() {
+        return Err(PaymentError::Unauthorized);
+    }
+
+    let mut valid_count = 0;
+    let mut seen = Vec::new(env);
+
+    for caller in admins.iter() {
+        if seen.contains(&caller) {
+            continue;
+        }
+        caller.require_auth();
+
+        let is_admin = if let Some(config) = storage::get_admin_config(env) {
+            config.admins.contains(&caller)
+        } else if let Some(admin) = storage::get_admin(env) {
+            admin == caller
+        } else {
+            false
+        };
+
+        if is_admin {
+            valid_count += 1;
+            seen.push_back(caller);
+        } else {
+            return Err(PaymentError::Unauthorized);
+        }
+    }
+
+    let threshold = if let Some(config) = storage::get_admin_config(env) {
+        config.threshold
+    } else {
+        1
+    };
+
+    if valid_count < threshold {
+        return Err(PaymentError::Unauthorized);
+    }
+
+    Ok(())
+}
+
 /// Validate that `admin` is not the zero/burn address.
 pub fn validate_admin_address(env: &Env, admin: &Address) -> Result<(), PaymentError> {
     // The Soroban SDK does not expose a dedicated zero/burn address validation API
     // for `Address`. This is a best-effort guard against a zero-address
     // representation when the SDK serialization exposes it.
     let admin_xdr = admin.clone().to_xdr(env);
-    let all_zero = admin_xdr.iter().all(|&b| b == 0);
+    let all_zero = admin_xdr.iter().all(|b| b == 0);
     if all_zero {
         return Err(PaymentError::InvalidInput);
     }
@@ -59,28 +103,40 @@ pub fn validate_merchant_fields(
     contact_info: &String,
 ) -> Result<(), PaymentError> {
     // name <= 64 bytes
-    let name_bytes = name.to_string().as_bytes();
-    if name_bytes.len() > 64 {
+    if name.len() > 64 {
         return Err(PaymentError::InvalidInput);
     }
 
     // description <= 256 bytes
-    let desc_bytes = description.to_string().as_bytes();
-    if desc_bytes.len() > 256 {
+    if description.len() > 256 {
         return Err(PaymentError::InvalidInput);
     }
 
     // contact_info <= 128 bytes and printable ASCII only
-    let contact_bytes = contact_info.to_string().as_bytes();
-    if contact_bytes.len() > 128 {
+    let len = contact_info.len();
+    if len > 128 {
         return Err(PaymentError::InvalidInput);
     }
-    for &b in contact_bytes.iter() {
+    
+    let mut buf = [0u8; 128];
+    contact_info.copy_into_slice(&mut buf[..len as usize]);
+    for i in 0..len as usize {
+        let b = buf[i];
         if b < 0x20 || b > 0x7E {
             return Err(PaymentError::InvalidInput);
         }
     }
+    
+    Ok(())
+}
 
+/// Validate optional metadata: max 512 bytes when present.
+pub fn validate_metadata(metadata: Option<&String>) -> Result<(), PaymentError> {
+    if let Some(m) = metadata {
+        if m.len() > 512 {
+            return Err(PaymentError::InvalidInput);
+        }
+    }
     Ok(())
 }
 

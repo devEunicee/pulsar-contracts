@@ -20,8 +20,9 @@ use soroban_sdk::{
 use error::PaymentError;
 use storage::REFUND_WINDOW;
 use types::{
-    DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
-    PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
+    AdminConfig, DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter,
+    PaymentOrder, PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField,
+    SortOrder,
 };
 
 #[contract]
@@ -36,12 +37,31 @@ impl PaymentContract {
         if storage::get_admin_config(&env).is_some() || storage::get_admin(&env).is_some() {
             return Err(PaymentError::AdminAlreadySet);
         }
-        helper::validate_admin_address(&env, &admin)?;
-        admin.require_auth();
-        storage::set_admin(&env, &admin);
+
+        if admins.is_empty() || threshold == 0 || threshold > admins.len() {
+            return Err(PaymentError::InvalidInput);
+        }
+
+        for admin in admins.iter() {
+            helper::validate_admin_address(&env, &admin)?;
+            admin.require_auth();
+        }
+
+        storage::set_admin_config(
+            &env,
+            &AdminConfig {
+                admins: admins.clone(),
+                threshold,
+            },
+        );
+        // Fallback for single admin check in some legacy logic
+        if admins.len() == 1 {
+            storage::set_admin(&env, &admins.get(0).unwrap());
+        }
+
         storage::set_contract_version(&env, 1);
         env.events()
-            .publish((DataKey::Admin,), (String::from_str(&env, "admin_set"), admin));
+            .publish((DataKey::Admin,), (String::from_str(&env, "admin_set"), admins));
         Ok(())
     }
 
@@ -125,11 +145,13 @@ impl PaymentContract {
         merchant_address: Address,
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
-        if let Some(admins) = admin_authorizers {
-            helper::require_multi_admin(&env, admins)?;
+        let authorizer = if let Some(admins) = admin_authorizers {
+            helper::require_multi_admin(&env, admins.clone())?;
+            admins.get(0).unwrap()
         } else {
             merchant_address.require_auth();
-        }
+            merchant_address.clone()
+        };
 
         let mut merchant =
             storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)?;
@@ -137,7 +159,31 @@ impl PaymentContract {
         storage::save_merchant(&env, &merchant);
         env.events().publish(
             (String::from_str(&env, "merchant_deactivated"),),
-            (merchant_address, caller),
+            (merchant_address, authorizer),
+        );
+        Ok(())
+    }
+
+    pub fn reactivate_merchant(
+        env: Env,
+        merchant_address: Address,
+        admin_authorizers: Option<Vec<Address>>,
+    ) -> Result<(), PaymentError> {
+        let authorizer = if let Some(admins) = admin_authorizers {
+            helper::require_multi_admin(&env, admins.clone())?;
+            admins.get(0).unwrap()
+        } else {
+            merchant_address.require_auth();
+            merchant_address.clone()
+        };
+
+        let mut merchant =
+            storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)?;
+        merchant.active = true;
+        storage::save_merchant(&env, &merchant);
+        env.events().publish(
+            (String::from_str(&env, "merchant_reactivated"),),
+            (merchant_address, authorizer),
         );
         Ok(())
     }
@@ -154,7 +200,7 @@ impl PaymentContract {
         payer: Address,
         order: PaymentOrder,
         signature: BytesN<64>,
-        merchant_public_key: BytesN<32>,
+        _merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
         payer.require_auth();
 
@@ -165,6 +211,7 @@ impl PaymentContract {
 
         helper::validate_amount(order.amount)?;
         helper::validate_order_id(&order.order_id)?;
+        helper::validate_metadata(order.metadata.as_ref())?;
 
         if storage::get_payment(&env, &order.order_id).is_some() {
             return Err(PaymentError::PaymentAlreadyExists);
@@ -204,13 +251,14 @@ impl PaymentContract {
             status: PaymentStatus::Completed,
             paid_at: now,
             description: order.description.clone(),
+            metadata: order.metadata.clone(),
         };
 
         storage::save_payment(&env, &record);
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &payer, &order.order_id);
         storage::push_global_payment_id(&env, &order.order_id);
-        storage::increment_payment_stats(&env, order.amount);
+        storage::increment_payment_stats(&env, order.amount)?;
 
         // Commit payment state before the external token transfer to reduce
         // re-entrancy risk in external contracts.
@@ -349,10 +397,10 @@ impl PaymentContract {
     // ── Payment management ────────────────────────────────────────────────────
 
     pub fn update_payment_status(
-        env: Env,
-        caller: Address,
-        order_id: Bytes,
-        refunded_amount: i128,
+        _env: Env,
+        _caller: Address,
+        _order_id: Bytes,
+        _refunded_amount: i128,
     ) -> Result<(), PaymentError> {
         // Intentionally removed from public ABI: refund state must be modified
         // exclusively via the refund workflow (initiate/approve/execute).
@@ -444,7 +492,7 @@ impl PaymentContract {
             return Err(PaymentError::InvalidInput);
         }
 
-        let record =
+        let mut record =
             storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
 
         if caller != record.payer && caller != record.merchant_address {
@@ -492,7 +540,6 @@ impl PaymentContract {
         refund_id: Bytes,
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
-        caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
 
@@ -529,7 +576,6 @@ impl PaymentContract {
         refund_id: Bytes,
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
-        caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
 
@@ -629,6 +675,7 @@ impl PaymentContract {
     ) -> Result<(), PaymentError> {
         initiator.require_auth();
         helper::validate_amount(order.amount)?;
+        helper::validate_metadata(order.metadata.as_ref())?;
 
         if storage::get_multisig(&env, &payment_id).is_some() {
             return Err(PaymentError::PaymentAlreadyExists);
@@ -750,12 +797,13 @@ impl PaymentContract {
             status: PaymentStatus::Completed,
             paid_at: now,
             description: order.description.clone(),
+            metadata: order.metadata.clone(),
         };
         storage::save_payment(&env, &record);
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
-        storage::push_payer_payment_id(&env, &executor, &order.order_id);
+        storage::push_payer_payment_id(&env, &ms.order.payer, &order.order_id);
         storage::push_global_payment_id(&env, &order.order_id);
-        storage::increment_payment_stats(&env, order.amount);
+        storage::increment_payment_stats(&env, order.amount)?;
 
         ms.executed = true;
         storage::save_multisig(&env, &ms);
@@ -781,31 +829,23 @@ impl PaymentContract {
         let cap = limit.min(100) as usize;
 
         // Collect all matching records
-        let mut records: RustVec<PaymentRecord> = RustVec::new();
-        let mut skip = cursor.is_some();
-
+        let mut all_records: RustVec<PaymentRecord> = RustVec::new();
         for id in ids.iter() {
-            if skip {
-                if Some(id.clone()) == cursor {
-                    skip = false;
-                }
-                continue;
-            }
             if let Some(record) = storage::get_payment(env, &id) {
                 let passes = filter
                     .as_ref()
                     .map(|f| helper::matches_filter(&record, f))
                     .unwrap_or(true);
                 if passes {
-                    records.push(record);
+                    all_records.push(record);
                 }
             }
         }
 
-        let total = records.len() as u32;
+        let total = all_records.len() as u32;
 
         // Sort using Rust's efficient sorting
-        records.sort_by(|a, b| {
+        all_records.sort_by(|a, b| {
             let (v1, v2) = match sort_field {
                 SortField::Date => (a.paid_at as i128, b.paid_at as i128),
                 SortField::Amount => (a.amount, b.amount),
@@ -816,41 +856,30 @@ impl PaymentContract {
             }
         });
 
-        let next_cursor = if records.len() > cap {
-            records.get(cap - 1).map(|r| r.order_id.clone())
+        // Find cursor position if provided
+        let start_index = if let Some(ref c) = cursor {
+            all_records
+                .iter()
+                .position(|r| r.order_id == *c)
+                .map(|p| p + 1)
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        // Take up to 'cap' records starting from 'start_index'
+        let mut page: Vec<PaymentRecord> = Vec::new(env);
+        let end_index = (start_index + cap).min(all_records.len());
+
+        for i in start_index..end_index {
+            page.push_back(all_records[i].clone());
+        }
+
+        let next_cursor = if end_index < all_records.len() && !page.is_empty() {
+            page.get(page.len() - 1).map(|r| r.order_id.clone())
         } else {
             None
         };
-
-        // Truncate to cap and convert back to Soroban Vec
-        let mut page: Vec<PaymentRecord> = Vec::new(env);
-        for i in 0..(records.len().min(cap)) {
-            page.push_back(records[i].clone());
-        }
-
-        Ok(PaymentPage {
-            records: page,
-            next_cursor,
-            total,
-        })
-    }
-}
-ending => v1.cmp(&v2),
-                SortOrder::Descending => v2.cmp(&v1),
-            }
-        });
-
-        let next_cursor = if records.len() > cap {
-            records.get(cap - 1).map(|r| r.order_id.clone())
-        } else {
-            None
-        };
-
-        // Truncate to cap and convert back to Soroban Vec
-        let mut page: Vec<PaymentRecord> = Vec::new(env);
-        for i in 0..(records.len().min(cap)) {
-            page.push_back(records[i].clone());
-        }
 
         Ok(PaymentPage {
             records: page,

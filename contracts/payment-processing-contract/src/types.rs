@@ -45,6 +45,8 @@ pub struct PaymentOrder {
     pub amount: i128,
     pub description: String,
     pub expires_at: u64,
+    /// Optional structured metadata (JSON string, max 512 bytes).
+    pub metadata: Option<String>,
 }
 
 #[contracttype]
@@ -60,6 +62,8 @@ pub struct PaymentRecord {
     pub status: PaymentStatus,
     pub paid_at: u64,
     pub description: String,
+    /// Optional structured metadata carried from the order (JSON string, max 512 bytes).
+    pub metadata: Option<String>,
 }
 
 // ── Refund ────────────────────────────────────────────────────────────────────
@@ -169,19 +173,17 @@ pub struct AdminConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
+    AdminConfig,
     ContractVersion,
     Merchant(Address),
     Payment(Bytes),
-    MerchantPaymentChunk(Address, u32),
-    MerchantPaymentCount(Address),
-    PayerPaymentChunk(Address, u32),
-    PayerPaymentCount(Address),
+    MerchantPayments(Address),
+    PayerPayments(Address),
     Refund(Bytes),
     Multisig(Bytes),
     CleanupPeriod,
     DefaultMultisigExpiry,
-    GlobalPaymentChunk(u32),
-    GlobalPaymentCount,
+    GlobalPaymentIndex,
     GlobalStats,
     AllPayments,
     AllRefunds,

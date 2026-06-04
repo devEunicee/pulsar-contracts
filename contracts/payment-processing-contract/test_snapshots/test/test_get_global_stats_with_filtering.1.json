@@ -34,7 +34,14 @@
               "function_name": "set_admin",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    }
+                  ]
+                },
+                {
+                  "u32": 1
                 }
               ]
             }
@@ -62,7 +69,7 @@
                   "string": "desc"
                 },
                 {
-                  "string": "c@c.com"
+                  "string": "c@c.com "
                 },
                 {
                   "vec": [
@@ -70,7 +77,8 @@
                       "symbol": "Retail"
                     }
                   ]
-                }
+                },
+                "void"
               ]
             }
           },
@@ -93,7 +101,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 10000
+                    "lo": 5000
                   }
                 }
               ]
@@ -133,7 +141,7 @@
                         "symbol": "description"
                       },
                       "val": {
-                        "string": "p1"
+                        "string": "Test order"
                       }
                     },
                     {
@@ -151,6 +159,12 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -182,7 +196,7 @@
                   "bytes": "22bab4026453b8ee99aa11c3d45c262fedc67ea071160656171cf0abf50eb98ceb2fd2f491c9780744f281bd445acc083d6b50a15466e2aa93a2fcc9d7525b0d"
                 },
                 {
-                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
                 }
               ]
             }
@@ -266,6 +280,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "order_id"
                       },
                       "val": {
@@ -294,7 +314,7 @@
                   "bytes": "5e36d92d36d06a16be5228b9a1efe3ed1ecd1e4336aab2c8a740604466e7c337b8c45c684af958a4eb83c89b3bd9a142a39c65366fce769d0527122df7a4d504"
                 },
                 {
-                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
                 }
               ]
             }
@@ -375,7 +395,8 @@
                 },
                 {
                   "bytes": "5231"
-                }
+                },
+                "void"
               ]
             }
           },
@@ -439,7 +460,11 @@
               "function_name": "get_global_payment_stats",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    }
+                  ]
                 },
                 "void",
                 "void"
@@ -460,7 +485,11 @@
               "function_name": "get_global_payment_stats",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    }
+                  ]
                 },
                 {
                   "u64": 500
@@ -485,7 +514,11 @@
               "function_name": "get_global_payment_stats",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    }
+                  ]
                 },
                 {
                   "u64": 2500
@@ -612,7 +645,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -653,16 +686,12 @@
                       "bytes": "4f524445525f303032"
                     }
                   ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u32": 2
                 }
               }
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -735,7 +764,7 @@
                         "symbol": "contact_info"
                       },
                       "val": {
-                        "string": "c@c.com"
+                        "string": "c@c.com "
                       }
                     },
                     {
@@ -759,8 +788,14 @@
                         "symbol": "registered_at"
                       },
                       "val": {
-                        "u64": 0
+                        "u64": 1000
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "signing_public_key"
+                      },
+                      "val": "void"
                     }
                   ]
                 }
@@ -768,7 +803,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -778,13 +813,10 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "MerchantPaymentChunk"
+                  "symbol": "MerchantPayments"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                },
-                {
-                  "u32": 0
                 }
               ]
             },
@@ -801,13 +833,10 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "MerchantPaymentChunk"
+                      "symbol": "MerchantPayments"
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                    },
-                    {
-                      "u32": 0
                     }
                   ]
                 },
@@ -821,16 +850,12 @@
                       "bytes": "4f524445525f303032"
                     }
                   ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u32": 2
                 }
               }
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -840,13 +865,10 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "PayerPaymentChunk"
+                  "symbol": "PayerPayments"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                },
-                {
-                  "u32": 0
                 }
               ]
             },
@@ -863,13 +885,10 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "PayerPaymentChunk"
+                      "symbol": "PayerPayments"
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                    },
-                    {
-                      "u32": 0
                     }
                   ]
                 },
@@ -883,16 +902,12 @@
                       "bytes": "4f524445525f303032"
                     }
                   ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u32": 2
                 }
               }
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -945,11 +960,25 @@
                     },
                     {
                       "key": {
+                        "symbol": "description"
+                      },
+                      "val": {
+                        "string": "Test order"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "merchant_address"
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -973,6 +1002,17 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "pending_refund_amount"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
                       }
                     },
                     {
@@ -1012,7 +1052,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -1065,11 +1105,25 @@
                     },
                     {
                       "key": {
+                        "symbol": "description"
+                      },
+                      "val": {
+                        "string": "p2"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "merchant_address"
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -1093,6 +1147,17 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "pending_refund_amount"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
                       }
                     },
                     {
@@ -1132,7 +1197,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -1241,7 +1306,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -1277,6 +1342,51 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AdminConfig"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "admins"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "threshold"
+                              },
+                              "val": {
+                                "u32": 1
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ContractVersion"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 1
                         }
                       },
                       {
@@ -1820,7 +1930,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 7500
+                          "lo": 2500
                         }
                       }
                     },

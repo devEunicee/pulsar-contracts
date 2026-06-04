@@ -34,7 +34,14 @@
               "function_name": "set_admin",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    }
+                  ]
+                },
+                {
+                  "u32": 1
                 }
               ]
             }
@@ -70,7 +77,8 @@
                       "symbol": "Retail"
                     }
                   ]
-                }
+                },
+                "void"
               ]
             }
           },
@@ -154,6 +162,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "order_id"
                       },
                       "val": {
@@ -182,7 +196,7 @@
                   "bytes": "22bab4026453b8ee99aa11c3d45c262fedc67ea071160656171cf0abf50eb98ceb2fd2f491c9780744f281bd445acc083d6b50a15466e2aa93a2fcc9d7525b0d"
                 },
                 {
-                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
                 }
               ]
             }
@@ -263,7 +277,8 @@
                 },
                 {
                   "bytes": "5231"
-                }
+                },
+                "void"
               ]
             }
           },
@@ -379,16 +394,12 @@
                       "bytes": "4f524445525f303031"
                     }
                   ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u32": 1
                 }
               }
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -487,6 +498,12 @@
                       "val": {
                         "u64": 0
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "signing_public_key"
+                      },
+                      "val": "void"
                     }
                   ]
                 }
@@ -494,7 +511,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -504,13 +521,10 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "MerchantPaymentChunk"
+                  "symbol": "MerchantPayments"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                },
-                {
-                  "u32": 0
                 }
               ]
             },
@@ -527,13 +541,10 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "MerchantPaymentChunk"
+                      "symbol": "MerchantPayments"
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                    },
-                    {
-                      "u32": 0
                     }
                   ]
                 },
@@ -544,16 +555,12 @@
                       "bytes": "4f524445525f303031"
                     }
                   ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u32": 1
                 }
               }
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -563,13 +570,10 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "PayerPaymentChunk"
+                  "symbol": "PayerPayments"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                },
-                {
-                  "u32": 0
                 }
               ]
             },
@@ -586,13 +590,10 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "PayerPaymentChunk"
+                      "symbol": "PayerPayments"
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                    },
-                    {
-                      "u32": 0
                     }
                   ]
                 },
@@ -603,16 +604,12 @@
                       "bytes": "4f524445525f303031"
                     }
                   ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u32": 1
                 }
               }
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -665,11 +662,25 @@
                     },
                     {
                       "key": {
+                        "symbol": "description"
+                      },
+                      "val": {
+                        "string": "Test order"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "merchant_address"
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -693,6 +704,17 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "pending_refund_amount"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 500
+                        }
                       }
                     },
                     {
@@ -732,7 +754,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -841,7 +863,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -877,6 +899,51 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AdminConfig"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "admins"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "threshold"
+                              },
+                              "val": {
+                                "u32": 1
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ContractVersion"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 1
                         }
                       },
                       {
