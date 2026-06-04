@@ -166,7 +166,11 @@ impl PaymentContract {
         helper::validate_amount(order.amount)?;
         helper::validate_order_id(&order.order_id)?;
 
+        // Reject if a payment with this order_id already exists or was archived
         if storage::get_payment(&env, &order.order_id).is_some() {
+            return Err(PaymentError::PaymentAlreadyExists);
+        }
+        if storage::is_archived_payment(&env, &order.order_id) {
             return Err(PaymentError::PaymentAlreadyExists);
         }
 
@@ -366,6 +370,8 @@ impl PaymentContract {
     ) -> Result<(), PaymentError> {
         helper::require_multi_admin(&env, admins)?;
         let record = storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
+        // Mark the order_id as archived (tombstone) to prevent replay
+        storage::set_archived_payment(&env, &order_id);
         storage::remove_payment(&env, &order_id);
         storage::remove_merchant_payment_id(&env, &record.merchant_address, &order_id);
         storage::remove_payer_payment_id(&env, &record.payer, &order_id);

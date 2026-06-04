@@ -85,6 +85,21 @@ pub fn remove_payment(env: &Env, order_id: &Bytes) {
         .remove(&DataKey::Payment(order_id.clone()));
 }
 
+// ── Archived payments (tombstones) ──────────────────────────────────────────
+
+pub fn is_archived_payment(env: &Env, order_id: &Bytes) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ArchivedPayment(order_id.clone()))
+        .unwrap_or(false)
+}
+
+pub fn set_archived_payment(env: &Env, order_id: &Bytes) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ArchivedPayment(order_id.clone()), &true);
+}
+
 // ── Payment index lists ───────────────────────────────────────────────────────
 
 const CHUNK_SIZE: u32 = 100;
