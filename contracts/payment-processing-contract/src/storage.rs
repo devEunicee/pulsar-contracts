@@ -4,8 +4,8 @@ use soroban_sdk::{Address, Bytes, Env, Vec};
 
 use crate::error::PaymentError;
 use crate::types::{
-    AdminConfig, DataKey, GlobalStats, Merchant, MultisigPayment, PaymentRecord, RefundRecord,
-    SubscriptionState,
+    AdminConfig, DataKey, GlobalStats, Merchant, MerchantStats, MultisigPayment, PaymentRecord,
+    RefundRecord, SubscriptionState,
 };
 
 // ── TTL constants ─────────────────────────────────────────────────────────────
@@ -527,6 +527,29 @@ pub fn get_subscription(env: &Env, subscription_id: &Bytes) -> Option<Subscripti
 pub fn save_subscription(env: &Env, sub: &SubscriptionState) {
     let key = DataKey::Subscription(sub.subscription_id.clone());
     env.storage().persistent().set(&key, sub);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+// ── Merchant stats ────────────────────────────────────────────────────────────
+
+pub fn get_merchant_stats(env: &Env, merchant: &Address) -> MerchantStats {
+    env.storage()
+        .persistent()
+        .get(&DataKey::MerchantStats(merchant.clone()))
+        .unwrap_or(MerchantStats {
+            merchant_address: merchant.clone(),
+            total_payments: 0,
+            total_volume: 0,
+            total_refunds: 0,
+            total_refund_volume: 0,
+        })
+}
+
+pub fn save_merchant_stats(env: &Env, stats: &MerchantStats) {
+    let key = DataKey::MerchantStats(stats.merchant_address.clone());
+    env.storage().persistent().set(&key, stats);
     env.storage()
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);

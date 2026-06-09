@@ -254,4 +254,9 @@ pub enum DataKey {
     WhitelistEnabled,
     Whitelist(Address),
     OrderRefundCount(Bytes),
+    ArchivedPayment(Bytes),
+    TokenAllowlistEnabled,
+    AllowedToken(Address),
+    Subscription(Bytes),
+    MerchantStats(Address),
 }

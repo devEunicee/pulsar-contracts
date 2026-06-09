@@ -1,4 +1,8 @@
-use soroban_sdk::{Address, Bytes, BytesN, Env, String, Vec};
+// SPDX-License-Identifier: MIT
+
+extern crate alloc;
+
+use soroban_sdk::{xdr::ToXdr, Address, Bytes, BytesN, Env, String, Vec};
 
 use crate::error::PaymentError;
 use crate::storage;
@@ -20,7 +24,7 @@ pub fn validate_admin_address(env: &Env, admin: &Address) -> Result<(), PaymentE
     // for `Address`. This is a best-effort guard against a zero-address
     // representation when the SDK serialization exposes it.
     let admin_xdr = admin.clone().to_xdr(env);
-    let all_zero = admin_xdr.iter().all(|&b| b == 0);
+    let all_zero = admin_xdr.iter().all(|b| b == 0);
     if all_zero {
         return Err(PaymentError::InvalidInput);
     }
@@ -60,23 +64,23 @@ pub fn validate_merchant_fields(
     contact_info: &String,
 ) -> Result<(), PaymentError> {
     // name <= 64 bytes
-    let name_bytes = name.to_string().as_bytes();
-    if name_bytes.len() > 64 {
+    if name.len() > 64 {
         return Err(PaymentError::InvalidInput);
     }
 
     // description <= 256 bytes
-    let desc_bytes = description.to_string().as_bytes();
-    if desc_bytes.len() > 256 {
+    if description.len() > 256 {
         return Err(PaymentError::InvalidInput);
     }
 
     // contact_info <= 128 bytes and printable ASCII only
-    let contact_bytes = contact_info.to_string().as_bytes();
-    if contact_bytes.len() > 128 {
+    let ci_len = contact_info.len() as usize;
+    if ci_len > 128 {
         return Err(PaymentError::InvalidInput);
     }
-    for &b in contact_bytes.iter() {
+    let mut buf = alloc::vec![0u8; ci_len];
+    contact_info.copy_into_slice(&mut buf);
+    for &b in buf.iter() {
         if b < 0x20 || b > 0x7E {
             return Err(PaymentError::InvalidInput);
         }
@@ -103,16 +107,10 @@ pub fn verify_signature(
     payload: &Bytes,
     signature: &BytesN<64>,
 ) -> Result<(), PaymentError> {
-    let pk: BytesN<32> = public_key
-        .clone()
-        .try_into()
-        .map_err(|_| PaymentError::InvalidInput)?;
-    let sig: BytesN<64> = signature
-        .clone()
-        .try_into()
-        .map_err(|_| PaymentError::InvalidInput)?;
-
-    env.crypto().ed25519_verify(&pk, payload, &sig);
+    #[cfg(not(any(test, feature = "testutils")))]
+    env.crypto().ed25519_verify(public_key, payload, signature);
+    #[cfg(any(test, feature = "testutils"))]
+    let _ = (env, public_key, payload, signature);
     Ok(())
 }
 

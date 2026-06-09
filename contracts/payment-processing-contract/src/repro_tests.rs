@@ -21,7 +21,7 @@ use crate::{
 fn setup() -> (Env, PaymentContractClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PaymentContract);
+    let contract_id = env.register(PaymentContract, ());
     let client = PaymentContractClient::new(&env, &contract_id);
     (env, client)
 }
@@ -55,7 +55,9 @@ fn make_order(env: &Env, merchant: &Address, payer: &Address, token: &Address) -
 }
 
 fn admins(env: &Env, admin: &Address) -> Vec<Address> {
-    vec![env, admin.clone()]
+    let mut v = Vec::new(env);
+    v.push_back(admin.clone());
+    v
 }
 
 fn zero_key(env: &Env) -> BytesN<32> {

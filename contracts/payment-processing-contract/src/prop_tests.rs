@@ -29,6 +29,8 @@
 
 use proptest::prelude::*;
 
+use alloc::vec::Vec;
+
 use crate::error::PaymentError;
 use crate::helper::{matches_filter, validate_amount};
 use crate::types::{PaymentFilter, PaymentRecord, PaymentStatus, StatusFilter};
@@ -78,7 +80,7 @@ fn make_filter(
         date_end,
         amount_min,
         amount_max,
-        token: None,
+        tokens: None,
         status,
     }
 }

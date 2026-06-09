@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 5,
+    "address": 16,
     "nonce": 0
   },
   "auth": [
@@ -63,13 +63,13 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "string": "Store"
+                  "string": "M"
                 },
                 {
-                  "string": "desc"
+                  "string": "D"
                 },
                 {
-                  "string": "c@c.com"
+                  "string": "E"
                 },
                 {
                   "vec": [
@@ -101,7 +101,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 5000
+                    "lo": 1000
                   }
                 }
               ]
@@ -254,7 +254,7 @@
                         "symbol": "contact_info"
                       },
                       "val": {
-                        "string": "c@c.com"
+                        "string": "E"
                       }
                     },
                     {
@@ -262,7 +262,7 @@
                         "symbol": "description"
                       },
                       "val": {
-                        "string": "desc"
+                        "string": "D"
                       }
                     },
                     {
@@ -270,7 +270,7 @@
                         "symbol": "name"
                       },
                       "val": {
-                        "string": "Store"
+                        "string": "M"
                       }
                     },
                     {
@@ -529,7 +529,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 5000
+                          "lo": 1000
                         }
                       }
                     },

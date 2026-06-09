@@ -22,9 +22,9 @@ use soroban_sdk::{
 use error::PaymentError;
 use storage::{REFUND_GRACE_BUFFER, REFUND_WINDOW};
 use types::{
-    DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
-    PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
-    SubscriptionPlan, SubscriptionState, SubscriptionStatus,
+    DataKey, GlobalStats, Merchant, MerchantCategory, MerchantStats, MultisigPayment,
+    PaymentFilter, PaymentOrder, PaymentPage, PaymentRecord, PaymentStatus, RefundRecord,
+    RefundStatus, SortField, SortOrder,
 };
 
 #[contract]
@@ -458,14 +458,17 @@ impl PaymentContract {
 
     pub fn get_merchant_stats(
         env: Env,
+        caller: Address,
         merchant: Address,
         date_start: Option<u64>,
         date_end: Option<u64>,
     ) -> Result<MerchantStats, PaymentError> {
+        caller.require_auth();
         // Merchant can query their own stats, or admin can query any merchant
-        let caller = env.invoker();
         if caller != merchant {
-            helper::require_multi_admin(&env, vec![&env, caller])?;
+            let mut admins = Vec::new(&env);
+            admins.push_back(caller.clone());
+            helper::require_multi_admin(&env, admins)?;
         }
 
         // If no date filter, return cached stats
@@ -502,7 +505,6 @@ impl PaymentContract {
                         .total_volume
                         .checked_add(record.amount)
                         .ok_or(PaymentError::ArithmeticError)?;
-                    // Add refunded amount to refund stats
                     if record.refunded_amount > 0 {
                         stats.total_refunds += 1;
                         stats.total_refund_volume = stats
@@ -764,7 +766,6 @@ impl PaymentContract {
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
         storage::bump_instance_ttl(&env);
-        caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
         let record =
@@ -812,7 +813,6 @@ impl PaymentContract {
         admin_authorizers: Option<Vec<Address>>,
     ) -> Result<(), PaymentError> {
         storage::bump_instance_ttl(&env);
-        caller.require_auth();
         let mut refund =
             storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
         let record =
@@ -1198,15 +1198,9 @@ impl PaymentContract {
         sort_order: SortOrder,
     ) -> Result<PaymentPage, PaymentError> {
         let cap = limit.min(100) as usize;
+        // Collect and filter all matching records first.
         let mut records: RustVec<PaymentRecord> = RustVec::new();
-        let mut skip = cursor.is_some();
         for id in ids.iter() {
-            if skip {
-                if Some(id.clone()) == cursor {
-                    skip = false;
-                }
-                continue;
-            }
             if let Some(record) = storage::get_payment(env, &id) {
                 let passes = filter
                     .as_ref()
@@ -1217,7 +1211,7 @@ impl PaymentContract {
                 }
             }
         }
-        let total = records.len() as u32;
+        // Sort all matching records.
         records.sort_by(|a, b| {
             let (v1, v2) = match sort_field {
                 SortField::Date => (a.paid_at as i128, b.paid_at as i128),
@@ -1228,23 +1222,27 @@ impl PaymentContract {
                 SortOrder::Descending => v2.cmp(&v1),
             }
         });
-        let next_cursor = if records.len() > cap {
-            records.get(cap - 1).map(|r| r.order_id.clone())
+        let total = records.len() as u32;
+        // Apply cursor: start after the record whose order_id matches the cursor.
+        let start = if let Some(ref cur) = cursor {
+            records
+                .iter()
+                .position(|r| &r.order_id == cur)
+                .map(|p| p + 1)
+                .unwrap_or(records.len())
+        } else {
+            0
+        };
+        let slice = &records[start..];
+        let next_cursor = if slice.len() > cap {
+            slice.get(cap - 1).map(|r| r.order_id.clone())
         } else {
             None
         };
         let mut page: Vec<PaymentRecord> = Vec::new(env);
-        for i in 0..(records.len().min(cap)) {
-            page.push_back(records[i].clone());
+        for i in 0..(slice.len().min(cap)) {
+            page.push_back(slice[i].clone());
         }
-
-        Ok(PaymentPage {
-            records: page,
-            next_cursor,
-            total,
-        })
-    }
-}
 
         Ok(PaymentPage {
             records: page,
