@@ -1,5 +1,7 @@
 #![no_std]
 
+extern crate alloc;
+
 mod error;
 mod helper;
 mod storage;
@@ -9,7 +11,7 @@ mod types;
 mod test;
 
 use soroban_sdk::{
-    contract, contractimpl, token, Address, Bytes, Env, String, Vec,
+    contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Vec,
 };
 
 use error::PaymentError;
@@ -97,8 +99,8 @@ impl PaymentContract {
         env: Env,
         payer: Address,
         order: PaymentOrder,
-        signature: Bytes,
-        merchant_public_key: Bytes,
+        signature: BytesN<64>,
+        merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
         payer.require_auth();
 
@@ -121,8 +123,11 @@ impl PaymentContract {
             return Err(PaymentError::MerchantInactive);
         }
 
-        // Verify signature over order_id bytes as payload
-        let payload = Bytes::from_slice(&env, order.order_id.to_string().as_bytes());
+        // Build payload from order_id bytes (alloc feature is enabled via soroban-sdk)
+        let id_len = order.order_id.len() as usize;
+        let mut buf = alloc::vec![0u8; id_len];
+        order.order_id.copy_into_slice(&mut buf);
+        let payload = Bytes::from_slice(&env, &buf);
         helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;
 
         // Transfer tokens from payer to merchant

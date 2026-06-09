@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Bytes, String, Vec};
+use soroban_sdk::{contracttype, Address, String, Vec};
 
 // ── Merchant ──────────────────────────────────────────────────────────────────
 
