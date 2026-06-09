@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Bytes, BytesN, Env, String};
+use soroban_sdk::{Address, Bytes, BytesN, Env, String, Vec};
 
 use crate::error::PaymentError;
 use crate::storage;
@@ -10,6 +10,19 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
     let admin = storage::get_admin(env).ok_or(PaymentError::Unauthorized)?;
     if admin != *caller {
         return Err(PaymentError::Unauthorized);
+    }
+    Ok(())
+}
+
+/// Validate that `admin` is not the zero/burn address.
+pub fn validate_admin_address(env: &Env, admin: &Address) -> Result<(), PaymentError> {
+    // The Soroban SDK does not expose a dedicated zero/burn address validation API
+    // for `Address`. This is a best-effort guard against a zero-address
+    // representation when the SDK serialization exposes it.
+    let admin_xdr = admin.clone().to_xdr(env);
+    let all_zero = admin_xdr.iter().all(|&b| b == 0);
+    if all_zero {
+        return Err(PaymentError::InvalidInput);
     }
     Ok(())
 }
@@ -40,11 +53,46 @@ pub fn validate_amount(amount: i128) -> Result<(), PaymentError> {
     Ok(())
 }
 
-/// Validate that `order_id` is non-empty.
-pub fn validate_order_id(order_id: &String) -> Result<(), PaymentError> {
-    if order_id.len() == 0 {
+/// Validate merchant string fields: name, description, contact_info
+pub fn validate_merchant_fields(
+    name: &String,
+    description: &String,
+    contact_info: &String,
+) -> Result<(), PaymentError> {
+    // name <= 64 bytes
+    let name_bytes = name.to_string().as_bytes();
+    if name_bytes.len() > 64 {
         return Err(PaymentError::InvalidInput);
     }
+
+    // description <= 256 bytes
+    let desc_bytes = description.to_string().as_bytes();
+    if desc_bytes.len() > 256 {
+        return Err(PaymentError::InvalidInput);
+    }
+
+    // contact_info <= 128 bytes and printable ASCII only
+    let contact_bytes = contact_info.to_string().as_bytes();
+    if contact_bytes.len() > 128 {
+        return Err(PaymentError::InvalidInput);
+    }
+    for &b in contact_bytes.iter() {
+        if b < 0x20 || b > 0x7E {
+            return Err(PaymentError::InvalidInput);
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate that `order_id` is non-empty.
+pub fn validate_order_id(order_id: &Bytes) -> Result<(), PaymentError> {
+    // Enforce non-empty, max 64 bytes
+    let len = order_id.len();
+    if len == 0 || len > 64 {
+        return Err(PaymentError::InvalidInput);
+    }
+    // character check is omitted for Bytes as it's harder in no_std without String
     Ok(())
 }
 
@@ -55,13 +103,16 @@ pub fn verify_signature(
     payload: &Bytes,
     signature: &BytesN<64>,
 ) -> Result<(), PaymentError> {
-    #[cfg(not(any(test, feature = "testutils")))]
-    env.crypto()
-        .ed25519_verify(public_key, payload, signature);
-    #[cfg(any(test, feature = "testutils"))]
-    {
-        let _ = (env, public_key, payload, signature);
-    }
+    let pk: BytesN<32> = public_key
+        .clone()
+        .try_into()
+        .map_err(|_| PaymentError::InvalidInput)?;
+    let sig: BytesN<64> = signature
+        .clone()
+        .try_into()
+        .map_err(|_| PaymentError::InvalidInput)?;
+
+    env.crypto().ed25519_verify(&pk, payload, &sig);
     Ok(())
 }
 
@@ -87,8 +138,9 @@ pub fn matches_filter(record: &PaymentRecord, filter: &PaymentFilter) -> bool {
             return false;
         }
     }
-    if let Some(ref token) = filter.token {
-        if record.token != *token {
+    if let Some(ref tokens) = filter.tokens {
+        // Empty list → no filter (match all). Non-empty → token must be in list.
+        if !tokens.is_empty() && !tokens.contains(&record.token) {
             return false;
         }
     }
@@ -108,6 +160,44 @@ pub fn matches_filter(record: &PaymentRecord, filter: &PaymentFilter) -> bool {
             if record.status != PaymentStatus::FullyRefunded {
                 return false;
             }
+        }
+    }
+    true
+}
+
+/// Require that at least one address in `admins` matches the stored admin config.
+pub fn require_multi_admin(env: &Env, admins: Vec<Address>) -> Result<(), PaymentError> {
+    if let Some(config) = storage::get_admin_config(env) {
+        for addr in admins.iter() {
+            if config.admins.contains(&addr) {
+                addr.require_auth();
+                return Ok(());
+            }
+        }
+        return Err(PaymentError::Unauthorized);
+    }
+    // Fall back to single-admin mode.
+    if let Some(admin) = storage::get_admin(env) {
+        for addr in admins.iter() {
+            if addr == admin {
+                addr.require_auth();
+                return Ok(());
+            }
+        }
+    }
+    Err(PaymentError::Unauthorized)
+}
+
+/// Returns true if `ts` falls within the optional [start, end] range.
+pub fn in_date_range(ts: u64, start: Option<u64>, end: Option<u64>) -> bool {
+    if let Some(s) = start {
+        if ts < s {
+            return false;
+        }
+    }
+    if let Some(e) = end {
+        if ts > e {
+            return false;
         }
     }
     true
