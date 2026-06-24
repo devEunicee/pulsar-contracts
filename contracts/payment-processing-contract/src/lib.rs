@@ -5,6 +5,7 @@ extern crate alloc;
 mod error;
 mod helper;
 mod request_validation;
+mod response_formatting;
 mod storage;
 mod types;
 
