@@ -898,6 +898,68 @@ impl PaymentContract {
         Ok(refund.status)
     }
 
+    /// Mark a refund as Disputed. Callable by payer or merchant while refund is Pending/Approved.
+    pub fn dispute_refund(
+        env: Env,
+        caller: Address,
+        refund_id: Bytes,
+    ) -> Result<(), PaymentError> {
+        caller.require_auth();
+        let mut refund =
+            storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
+
+        let record = storage::get_payment(&env, &refund.order_id)
+            .ok_or(PaymentError::PaymentNotFound)?;
+
+        if caller != record.payer && caller != record.merchant_address {
+            return Err(PaymentError::Unauthorized);
+        }
+        if refund.status == RefundStatus::Completed || refund.status == RefundStatus::Rejected {
+            return Err(PaymentError::RefundAlreadyCompleted);
+        }
+
+        refund.status = RefundStatus::Disputed;
+        storage::save_refund(&env, &refund);
+        env.events().publish(
+            (String::from_str(&env, "refund_disputed"),),
+            refund_id,
+        );
+        Ok(())
+    }
+
+    /// Admin resolves a disputed refund (approve or reject). Checks dispute_deadline.
+    pub fn resolve_dispute(
+        env: Env,
+        admin: Address,
+        refund_id: Bytes,
+        approve: bool,
+    ) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+        let mut refund =
+            storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
+
+        if refund.status != RefundStatus::Disputed {
+            return Err(PaymentError::RefundAlreadyCompleted);
+        }
+
+        let now = env.ledger().timestamp();
+        if now > refund.dispute_deadline {
+            return Err(PaymentError::RefundWindowExpired);
+        }
+
+        refund.status = if approve {
+            RefundStatus::Approved
+        } else {
+            RefundStatus::Rejected
+        };
+        storage::save_refund(&env, &refund);
+        env.events().publish(
+            (String::from_str(&env, "dispute_resolved"),),
+            (refund_id, approve),
+        );
+        Ok(())
+    }
+
     // ── Multi-signature payments ───────────────────────────────────────────────
 
     /// Initiate a multi-signature payment, locking funds in contract escrow.

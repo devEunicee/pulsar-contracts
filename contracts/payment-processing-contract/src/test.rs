@@ -934,6 +934,56 @@ fn test_get_global_payment_stats() {
     assert_eq!(stats.total_volume, 1000);
 }
 
+// ── Dispute resolution tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_resolve_dispute_within_window_passes() {
+    let (env, client) = setup();
+    let (admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_D1"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "disputed"),
+    );
+    client.dispute_refund(&payer, &bytes(&env, "REFUND_D1"));
+    assert_eq!(
+        client.get_refund_status(&bytes(&env, "REFUND_D1")),
+        RefundStatus::Disputed
+    );
+
+    // resolve within dispute window (paid_at=0, deadline = 0 + 2_592_000 + 604_800)
+    env.ledger().with_mut(|l| l.timestamp = 100);
+    client.resolve_dispute(&admin, &bytes(&env, "REFUND_D1"), &true);
+    assert_eq!(
+        client.get_refund_status(&bytes(&env, "REFUND_D1")),
+        RefundStatus::Approved
+    );
+}
+
+#[test]
+fn test_resolve_dispute_after_deadline_fails() {
+    let (env, client) = setup();
+    let (admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_D2"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "disputed"),
+    );
+    client.dispute_refund(&payer, &bytes(&env, "REFUND_D2"));
+
+    // advance past paid_at(0) + REFUND_WINDOW(2_592_000) + DISPUTE_WINDOW(604_800)
+    env.ledger().with_mut(|l| l.timestamp = 2_592_000 + 604_801);
+
+    let result = client.try_resolve_dispute(&admin, &bytes(&env, "REFUND_D2"), &true);
+    assert_eq!(result, Err(Ok(PaymentError::RefundWindowExpired)));
+}
+
 // ── Multisig tests ────────────────────────────────────────────────────────────
 
 #[test]
