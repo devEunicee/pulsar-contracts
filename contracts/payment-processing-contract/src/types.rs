@@ -143,6 +143,15 @@ pub struct PaymentFilter {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaymentPage {
     pub records: Vec<PaymentRecord>,
+    /// Opaque pagination cursor pointing to the last record on the page.
+    ///
+    /// Current format: raw `order_id` bytes of the last record. Callers that
+    /// transport the cursor over textual channels (CLI, HTTP) should encode
+    /// it (for example as base64). The contract treats the cursor as an opaque
+    /// `Bytes` value and will start the next page after the matching `order_id`.
+    ///
+    /// NOTE: changing this format is a breaking change. Any future change
+    /// should use a versioned encoding and include a migration note in an ADR.
     pub next_cursor: Option<Bytes>,
     pub total: u32,
 }

@@ -18,6 +18,20 @@ Options considered:
 
 Use cursor-based pagination (option 2). `get_payer_payment_history` and `get_merchant_payment_history` accept `cursor: Option<Bytes>` and `limit: u32` (capped at 100). The response includes `next_cursor: Option<Bytes>` pointing to the last record on the page; passing it as `cursor` on the next call retrieves the following page.
 
+### Cursor format and migration
+
+The cursor is currently the raw `order_id` bytes of the last record returned.
+Callers that need to transmit the cursor over textual transports (CLI, HTTP)
+should encode it, for example using base64. Because the contract treats the
+cursor as an opaque `Bytes` value, callers should not attempt to parse its
+contents.
+
+If the cursor format ever needs to change, the change must be versioned and
+documented in an ADR that includes a migration strategy. A recommended
+pattern is to use a small version prefix (e.g. `v1:`) followed by a stable
+encoding (base64 of the order_id) so that callers can detect incompatible
+cursor formats.
+
 Sorting is applied before pagination so the cursor position is stable within a sort order.
 
 ## Consequences

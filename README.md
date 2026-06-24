@@ -348,6 +348,11 @@ stellar contract invoke --id $CONTRACT_ID --source-account <PAYER_KEY> --network
 **Sort orders**: `Ascending` | `Descending`  
 **Pagination**: pass the `next_cursor` from the previous response as `cursor`. Max 100 results per page.
 
+Cursor format: the returned `next_cursor` is the raw `order_id` bytes of the
+last record. When passing the cursor through a textual interface (CLI or
+HTTP), encode it (for example base64). The cursor is opaque and callers
+should treat it as an opaque token rather than attempting to parse it.
+
 #### `get_global_payment_stats` *(admin only)*
 
 ```bash
