@@ -47,6 +47,26 @@ GET /webhooks/:merchantAddress
 DELETE /webhooks/:merchantAddress
 ```
 
+### Health endpoints
+
+#### `GET /health`
+Basic service status with a timestamp and uptime.
+
+#### `GET /health/deep`
+Full dependency health check including:
+- database connection
+- RPC node health
+- contract availability on Soroban
+
+#### `GET /health/liveness`
+Reports whether the service process is alive.
+
+#### `GET /health/readiness`
+Reports whether the service is ready to receive traffic.
+
+#### `GET /health/metrics`
+Returns runtime health metrics and response-time statistics.
+
 ---
 
 ## Webhook Payload
