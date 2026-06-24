@@ -727,6 +727,7 @@ The contract implements a **hybrid analytics approach**:
 | `multisig_initiated` | `initiate_multisig_payment` |
 | `multisig_signed` | `sign_multisig_payment` |
 | `multisig_executed` | `execute_multisig_payment` |
+| `contract_upgraded` | `migrate` |
 
 ---
 
