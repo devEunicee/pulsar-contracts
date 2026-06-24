@@ -1,7 +1,19 @@
-This folder contains small vanilla-JS demo components for UI issues tracked in the repository.
+# Pulsar Frontend — Payer Dashboard
 
-- `form-validation.html` — real-time validation UI demo for merchant/payment forms.
-- `multi-step-wizard.html` — multi-step form wizard demo (separate branch/PR).
-- `shortcuts.html` & `shortcuts.js` — keyboard shortcuts demo (separate branch/PR).
+React + Vite UI for payers to view payment history and track refund status.
 
-Open `form-validation.html` in a browser to try the validation demo.
+## Setup
+
+```bash
+cd frontend
+cp .env.example .env        # fill in CONTRACT_ID
+npm install
+npm run dev
+```
+
+## Features
+- Freighter wallet connection
+- Paginated payment history table (cursor-based)
+- Filter by status, amount range
+- Sort by date or amount (ascending/descending)
+- Refund status displayed inline per payment
