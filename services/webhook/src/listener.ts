@@ -41,7 +41,9 @@ export async function startListener(
 
         let eventName: string;
         try {
-          eventName = xdr.ScVal.fromXDR(topic, "base64").str().toString();
+          const scVal = topic;
+          const strVal = scVal.str();
+          eventName = typeof strVal === "string" ? strVal : strVal.toString();
         } catch {
           continue;
         }
@@ -74,12 +76,13 @@ export async function startListener(
   }, pollIntervalMs);
 }
 
-function extractMerchant(ev: rpc.Api.EventRecord): string | null {
+function extractMerchant(ev: rpc.Api.EventResponse): string | null {
   try {
     // topic[1] is conventionally the merchant address in Pulsar events
     const raw = ev.topic[1];
     if (!raw) return null;
-    return xdr.ScVal.fromXDR(raw, "base64").address().toString();
+    const addressVal = raw.address();
+    return typeof addressVal === "string" ? addressVal : addressVal.toString();
   } catch {
     return null;
   }

@@ -20,6 +20,10 @@ Thumbs.db
 # Soroban / Stellar CLI local state
 .soroban/
 
+# Node service artifacts
+/services/*/node_modules
+/services/*/dist
+
 # NOTE: Cargo.lock is intentionally committed for contract crates
 # to ensure reproducible builds.
 
