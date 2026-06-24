@@ -148,3 +148,26 @@ fn test_pagination_cursor_inverted() {
     assert_eq!(page2_desc.records.get(0).unwrap().amount, 300);
     assert_eq!(page2_desc.records.get(1).unwrap().amount, 200);
 }
+
+#[test]
+fn test_contract_upgrade_emits_event() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.set_admin(&admin);
+
+    let new_hash = BytesN::from_array(&env, &[1u8; 32]);
+    client.migrate(&admin, &new_hash);
+
+    let events = env.events().all();
+    let last_event = events.get(events.len() - 1).unwrap();
+
+    let topics = last_event.1;
+    assert_eq!(topics.len(), 1);
+    let topic: String = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, str(&env, "contract_upgraded"));
+
+    let (emitted_admin, emitted_hash, ts): (Address, BytesN<32>, u64) = last_event.2.into_val(&env);
+    assert_eq!(emitted_admin, admin);
+    assert_eq!(emitted_hash, new_hash);
+    assert!(ts > 0);
+}

@@ -43,6 +43,17 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Emit an event when the contract is upgraded so there is an on-chain audit trail.
+    pub fn migrate(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+        let ts = env.ledger().timestamp();
+        env.events().publish(
+            (String::from_str(&env, "contract_upgraded"),),
+            (admin, new_wasm_hash, ts),
+        );
+        Ok(())
+    }
+
     // ── Merchant management ───────────────────────────────────────────────────
 
     pub fn register_merchant(
