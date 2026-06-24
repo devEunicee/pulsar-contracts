@@ -1,0 +1,9 @@
+{
+  "name": "pulsar-frontend-demos",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "echo 'Open frontend/form-validation.html in a browser'"
+  },
+  "license": "MIT"
+}
