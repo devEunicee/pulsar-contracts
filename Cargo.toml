@@ -2,9 +2,8 @@
 resolver = "2"
 members = [
     "contracts/payment-processing-contract",
-    "services/payment-processing-service",
+    "services/cache-layer",
 ]
-rust-version = "1.79.0"
 
 [profile.release]
 opt-level = "z"
