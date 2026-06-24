@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+mod archival;
 mod error;
 mod helper;
 mod storage;

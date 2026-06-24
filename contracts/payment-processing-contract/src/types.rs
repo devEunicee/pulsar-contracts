@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Bytes, String, Vec};
+use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Vec};
 
 // ── Merchant ──────────────────────────────────────────────────────────────────
 
@@ -172,4 +172,10 @@ pub enum DataKey {
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
+    ArchivedPayment(Bytes),
+    ArchivedRefund(Bytes),
+    ArchiveMetadata(Bytes),
+    ArchiveIndex(Bytes),
+    ArchiveConfig,
+    ArchiveStats,
 }
