@@ -238,6 +238,93 @@ fn test_deactivate_merchant() {
     assert!(!client.get_merchant(&merchant).active);
 }
 
+// ── update_merchant tests ─────────────────────────────────────────────────────
+
+#[test]
+fn test_update_merchant_success() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Old Name"),
+        &str(&env, "old desc"),
+        &str(&env, "old@c.com"),
+        &MerchantCategory::Retail,
+    );
+    client.update_merchant(
+        &merchant,
+        &str(&env, "New Name"),
+        &str(&env, "new desc"),
+        &str(&env, "new@c.com"),
+        &MerchantCategory::Food,
+    );
+    let m = client.get_merchant(&merchant);
+    assert_eq!(m.name, str(&env, "New Name"));
+    assert_eq!(m.category, MerchantCategory::Food);
+    assert!(m.active);
+    // registered_at preserved (non-zero since we don't advance time)
+    assert_eq!(m.registered_at, 0);
+}
+
+#[test]
+fn test_update_merchant_empty_name_fails() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    let result = client.try_update_merchant(
+        &merchant,
+        &str(&env, ""),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
+fn test_update_merchant_not_found_fails() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    let result = client.try_update_merchant(
+        &merchant,
+        &str(&env, "Name"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::MerchantNotFound)));
+}
+
+#[test]
+fn test_update_merchant_inactive_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    client.deactivate_merchant(&admin, &merchant);
+    let result = client.try_update_merchant(
+        &merchant,
+        &str(&env, "New Name"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::MerchantInactive)));
+}
+
 // ── Payment tests ─────────────────────────────────────────────────────────────
 
 #[test]
@@ -932,6 +1019,56 @@ fn test_get_global_payment_stats() {
     let stats = client.get_global_payment_stats(&admins(&env, &admin), &Some(500), &Some(1500));
     assert_eq!(stats.total_payments, 1);
     assert_eq!(stats.total_volume, 1000);
+}
+
+// ── Dispute resolution tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_resolve_dispute_within_window_passes() {
+    let (env, client) = setup();
+    let (admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_D1"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "disputed"),
+    );
+    client.dispute_refund(&payer, &bytes(&env, "REFUND_D1"));
+    assert_eq!(
+        client.get_refund_status(&bytes(&env, "REFUND_D1")),
+        RefundStatus::Disputed
+    );
+
+    // resolve within dispute window (paid_at=0, deadline = 0 + 2_592_000 + 604_800)
+    env.ledger().with_mut(|l| l.timestamp = 100);
+    client.resolve_dispute(&admin, &bytes(&env, "REFUND_D1"), &true);
+    assert_eq!(
+        client.get_refund_status(&bytes(&env, "REFUND_D1")),
+        RefundStatus::Approved
+    );
+}
+
+#[test]
+fn test_resolve_dispute_after_deadline_fails() {
+    let (env, client) = setup();
+    let (admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    client.initiate_refund(
+        &payer,
+        &bytes(&env, "REFUND_D2"),
+        &bytes(&env, "ORDER_001"),
+        &500,
+        &str(&env, "disputed"),
+    );
+    client.dispute_refund(&payer, &bytes(&env, "REFUND_D2"));
+
+    // advance past paid_at(0) + REFUND_WINDOW(2_592_000) + DISPUTE_WINDOW(604_800)
+    env.ledger().with_mut(|l| l.timestamp = 2_592_000 + 604_801);
+
+    let result = client.try_resolve_dispute(&admin, &bytes(&env, "REFUND_D2"), &true);
+    assert_eq!(result, Err(Ok(PaymentError::RefundWindowExpired)));
 }
 
 // ── Multisig tests ────────────────────────────────────────────────────────────
