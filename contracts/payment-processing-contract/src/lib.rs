@@ -72,6 +72,35 @@ impl PaymentContract {
         Ok(())
     }
 
+    pub fn update_merchant(
+        env: Env,
+        merchant_address: Address,
+        name: String,
+        description: String,
+        contact_info: String,
+        category: MerchantCategory,
+    ) -> Result<(), PaymentError> {
+        merchant_address.require_auth();
+        if name.len() == 0 {
+            return Err(PaymentError::InvalidInput);
+        }
+        let mut merchant =
+            storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)?;
+        if !merchant.active {
+            return Err(PaymentError::MerchantInactive);
+        }
+        merchant.name = name;
+        merchant.description = description;
+        merchant.contact_info = contact_info;
+        merchant.category = category;
+        storage::save_merchant(&env, &merchant);
+        env.events().publish(
+            (String::from_str(&env, "merchant_updated"),),
+            merchant_address,
+        );
+        Ok(())
+    }
+
     pub fn deactivate_merchant(
         env: Env,
         caller: Address,

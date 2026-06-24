@@ -149,6 +149,93 @@ fn test_deactivate_merchant() {
     assert!(!m.active);
 }
 
+// ── update_merchant tests ─────────────────────────────────────────────────────
+
+#[test]
+fn test_update_merchant_success() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Old Name"),
+        &str(&env, "old desc"),
+        &str(&env, "old@c.com"),
+        &MerchantCategory::Retail,
+    );
+    client.update_merchant(
+        &merchant,
+        &str(&env, "New Name"),
+        &str(&env, "new desc"),
+        &str(&env, "new@c.com"),
+        &MerchantCategory::Food,
+    );
+    let m = client.get_merchant(&merchant);
+    assert_eq!(m.name, str(&env, "New Name"));
+    assert_eq!(m.category, MerchantCategory::Food);
+    assert!(m.active);
+    // registered_at preserved (non-zero since we don't advance time)
+    assert_eq!(m.registered_at, 0);
+}
+
+#[test]
+fn test_update_merchant_empty_name_fails() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    let result = client.try_update_merchant(
+        &merchant,
+        &str(&env, ""),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
+fn test_update_merchant_not_found_fails() {
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    let result = client.try_update_merchant(
+        &merchant,
+        &str(&env, "Name"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::MerchantNotFound)));
+}
+
+#[test]
+fn test_update_merchant_inactive_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    client.deactivate_merchant(&admin, &merchant);
+    let result = client.try_update_merchant(
+        &merchant,
+        &str(&env, "New Name"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+    );
+    assert_eq!(result, Err(Ok(PaymentError::MerchantInactive)));
+}
+
 // ── Payment tests ─────────────────────────────────────────────────────────────
 
 #[test]
