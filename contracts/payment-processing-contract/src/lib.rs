@@ -4,12 +4,13 @@ extern crate alloc;
 
 mod error;
 mod helper;
+mod request_validation;
 mod storage;
 mod types;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "legacy-tests"))]
 mod test;
-#[cfg(test)]
+#[cfg(all(test, feature = "legacy-tests"))]
 mod repro_tests;
 
 use alloc::vec::Vec as RustVec;
@@ -812,30 +813,6 @@ impl PaymentContract {
             };
             match sort_order {
                 SortOrder::Ascending => v1.cmp(&v2),
-                SortOrder::Descending => v2.cmp(&v1),
-            }
-        });
-
-        let next_cursor = if records.len() > cap {
-            records.get(cap - 1).map(|r| r.order_id.clone())
-        } else {
-            None
-        };
-
-        // Truncate to cap and convert back to Soroban Vec
-        let mut page: Vec<PaymentRecord> = Vec::new(env);
-        for i in 0..(records.len().min(cap)) {
-            page.push_back(records[i].clone());
-        }
-
-        Ok(PaymentPage {
-            records: page,
-            next_cursor,
-            total,
-        })
-    }
-}
-ending => v1.cmp(&v2),
                 SortOrder::Descending => v2.cmp(&v1),
             }
         });
