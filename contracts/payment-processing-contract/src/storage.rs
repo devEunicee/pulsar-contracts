@@ -149,6 +149,8 @@ pub fn save_multisig(env: &Env, ms: &MultisigPayment) {
 pub const DEFAULT_CLEANUP_PERIOD: u64 = 7_776_000;
 /// Refund window: 30 days in seconds
 pub const REFUND_WINDOW: u64 = 2_592_000;
+/// Dispute window: 7 days in seconds (added after refund window)
+pub const DISPUTE_WINDOW: u64 = 604_800;
 /// Default multisig expiry: 24 hours in seconds
 pub const DEFAULT_MULTISIG_EXPIRY: u64 = 86_400;
 

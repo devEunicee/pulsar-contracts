@@ -68,6 +68,7 @@ pub enum RefundStatus {
     Approved,
     Rejected,
     Completed,
+    Disputed,
 }
 
 #[contracttype]
@@ -80,6 +81,7 @@ pub struct RefundRecord {
     pub status: RefundStatus,
     pub initiated_by: Address,
     pub initiated_at: u64,
+    pub dispute_deadline: u64,
 }
 
 // ── Multisig ──────────────────────────────────────────────────────────────────
