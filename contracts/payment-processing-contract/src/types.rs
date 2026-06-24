@@ -259,4 +259,10 @@ pub enum DataKey {
     AllowedToken(Address),
     Subscription(Bytes),
     MerchantStats(Address),
+    AuditLogEntry(Bytes),
+    AuditLogConfig,
+    ArchiveMetadata(Bytes),
+    ArchiveIndex(Bytes),
+    ArchiveConfig,
+    ArchiveStats,
 }
