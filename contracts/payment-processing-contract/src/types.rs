@@ -259,16 +259,8 @@ pub enum DataKey {
     AllowedToken(Address),
     Subscription(Bytes),
     MerchantStats(Address),
-    // Audit storage keys
-    AuditLog(Bytes),
-    AuditLogByTimestamp(u64),
-    AuditStats,
-    // Webhook storage keys
-    Webhook(Bytes),
-    MerchantWebhooks(Address),
-    WebhookEvent(Bytes),
-    WebhookDeliveryStatus(Bytes),
-    WebhookDeliveryAttempt(Bytes),
-    WebhookConfig,
-    WebhookStats,
+    // Connection pooling storage keys
+    PoolConfig,
+    PoolStats,
+    PoolConnection(u32),
 }

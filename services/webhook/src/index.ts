@@ -13,7 +13,7 @@ if (!CONTRACT_ID) {
 }
 
 const app = express();
-app.use(createRouter());
+app.use(createRouter(RPC_URL, CONTRACT_ID));
 
 app.listen(PORT, () => {
   console.log(`[api] Webhook service listening on port ${PORT}`);
