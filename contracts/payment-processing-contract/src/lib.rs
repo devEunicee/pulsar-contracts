@@ -22,6 +22,7 @@ use storage::REFUND_WINDOW;
 use types::{
     DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
     PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
+    SubscriptionState, SubscriptionPage,
 };
 
 #[contract]
@@ -618,6 +619,19 @@ impl PaymentContract {
         Ok(refund.status)
     }
 
+    // ── Subscriptions (indexes) ─────────────────────────────────────────────
+
+    pub fn list_subscriptions_by_merchant(
+        env: Env,
+        merchant: Address,
+        cursor: Option<Bytes>,
+        limit: u32,
+    ) -> Result<SubscriptionPage, PaymentError> {
+        helper::require_merchant(&env, &merchant, &merchant)?;
+        let ids = storage::get_merchant_subscription_ids(&env, &merchant);
+        Self::paginate_subscriptions(&env, ids, cursor, limit)
+    }
+
     // ── Multi-signature payments ───────────────────────────────────────────────
 
     pub fn initiate_multisig_payment(
@@ -829,6 +843,49 @@ impl PaymentContract {
         }
 
         Ok(PaymentPage {
+            records: page,
+            next_cursor,
+            total,
+        })
+    }
+
+    fn paginate_subscriptions(
+        env: &Env,
+        ids: Vec<Bytes>,
+        cursor: Option<Bytes>,
+        limit: u32,
+    ) -> Result<SubscriptionPage, PaymentError> {
+        let cap = limit.min(100) as usize;
+
+        let mut records: RustVec<SubscriptionState> = RustVec::new();
+        let mut skip = cursor.is_some();
+
+        for id in ids.iter() {
+            if skip {
+                if Some(id.clone()) == cursor {
+                    skip = false;
+                }
+                continue;
+            }
+            if let Some(record) = storage::get_subscription(env, &id) {
+                records.push(record);
+            }
+        }
+
+        let total = records.len() as u32;
+
+        let next_cursor = if records.len() > cap {
+            records.get(cap - 1).map(|r| r.subscription_id.clone())
+        } else {
+            None
+        };
+
+        let mut page: Vec<SubscriptionState> = Vec::new(env);
+        for i in 0..(records.len().min(cap)) {
+            page.push_back(records[i].clone());
+        }
+
+        Ok(SubscriptionPage {
             records: page,
             next_cursor,
             total,

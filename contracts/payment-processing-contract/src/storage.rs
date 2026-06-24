@@ -325,6 +325,55 @@ pub fn set_default_multisig_expiry(env: &Env, expiry: u64) {
         .set(&DataKey::DefaultMultisigExpiry, &expiry);
 }
 
+// ── Subscriptions ───────────────────────────────────────────────────────────
+
+pub fn get_subscription(env: &Env, subscription_id: &Bytes) -> Option<crate::types::SubscriptionState> {
+    let key = DataKey::Subscription(subscription_id.clone());
+    let result: Option<crate::types::SubscriptionState> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
+}
+
+pub fn save_subscription(env: &Env, s: &crate::types::SubscriptionState) {
+    let key = DataKey::Subscription(s.subscription_id.clone());
+    env.storage().persistent().set(&key, s);
+    env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+pub fn remove_subscription(env: &Env, subscription_id: &Bytes) {
+    env.storage().persistent().remove(&DataKey::Subscription(subscription_id.clone()));
+}
+
+pub fn get_merchant_subscription_ids(env: &Env, merchant: &Address) -> Vec<Bytes> {
+    let key = DataKey::MerchantSubscriptions(merchant.clone());
+    let result: Option<Vec<Bytes>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result.unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn push_merchant_subscription_id(env: &Env, merchant: &Address, subscription_id: &Bytes) {
+    let mut ids = get_merchant_subscription_ids(env, merchant);
+    ids.push_back(subscription_id.clone());
+    let key = DataKey::MerchantSubscriptions(merchant.clone());
+    env.storage().persistent().set(&key, &ids);
+    env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+pub fn remove_merchant_subscription_id(env: &Env, merchant: &Address, subscription_id: &Bytes) {
+    let ids = get_merchant_subscription_ids(env, merchant);
+    let mut new_ids = Vec::new(env);
+    for id in ids.iter() {
+        if id != *subscription_id {
+            new_ids.push_back(id);
+        }
+    }
+    env.storage().persistent().set(&DataKey::MerchantSubscriptions(merchant.clone()), &new_ids);
+}
+
 // ── Global stats ──────────────────────────────────────────────────────────────
 
 pub fn get_global_stats(env: &Env) -> GlobalStats {

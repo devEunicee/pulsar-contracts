@@ -103,6 +103,27 @@ pub struct MultisigPayment {
     pub created_at: u64,
 }
 
+// ── Subscriptions ───────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionState {
+    pub subscription_id: Bytes,
+    pub merchant_address: Address,
+    pub subscriber: Address,
+    pub active: bool,
+    pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionPage {
+    pub records: Vec<SubscriptionState>,
+    /// Opaque pagination cursor pointing to the last returned subscription id.
+    pub next_cursor: Option<Bytes>,
+    pub total: u32,
+}
+
 // ── Query helpers ─────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -200,4 +221,6 @@ pub enum DataKey {
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
+    Subscription(Bytes),
+    MerchantSubscriptions(Address),
 }
