@@ -289,6 +289,9 @@ stellar contract invoke --id $CONTRACT_ID --source-account <PAYER_KEY> --network
   --order '{"order_id":"ORDER_001","merchant_address":"...","payer":"...","token":"...","amount":1000,"description":"desc","expires_at":0}' \
   --signature <64_BYTE_HEX> \
   --merchant_public_key <32_BYTE_HEX>
+Note: the `expires_at` field is a UNIX timestamp in seconds. A value of
+`0` is treated as "never expires" (the order will not be rejected due to
+expiry). This behaviour is intentional and documented in the contract types.
 ```
 
 ---

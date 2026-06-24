@@ -44,6 +44,10 @@ pub struct PaymentOrder {
     pub token: Address,
     pub amount: i128,
     pub description: String,
+    /// Unix timestamp (seconds) when the order expires. A value of `0`
+    /// is treated as "never expires" (an order that does not expire).
+    /// This special-case is relied upon by existing integrations and is
+    /// intentionally accepted by the contract.
     pub expires_at: u64,
 }
 
