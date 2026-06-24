@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing! Pulsar is an open-source project and we welcome contributions of all kinds.
 
+By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Getting Started
 
 1. Fork the repository and clone your fork.
@@ -27,13 +29,59 @@ cargo test
 cargo build --target wasm32-unknown-unknown --release
 ```
 
+## Pre-commit Hooks (DO-013)
+
+A `.pre-commit-config.yaml` is provided at the repository root. It runs
+`cargo fmt --check` and `cargo clippy -- -D warnings` automatically before
+every commit, catching formatting and lint issues locally before CI sees them.
+
+### Installation
+
+1. Install [pre-commit](https://pre-commit.com/#install):
+
+   ```bash
+   pip install pre-commit
+   # or via Homebrew
+   brew install pre-commit
+   ```
+
+2. Install the hooks into your local clone (one-time setup):
+
+   ```bash
+   pre-commit install
+   ```
+
+3. The hooks now run automatically on every `git commit`. To run them manually
+   against all files at any time:
+
+   ```bash
+   pre-commit run --all-files
+   ```
+
+> **Note:** The hooks require a working Rust toolchain with `rustfmt` and
+> `clippy` components. Install them with:
+> ```bash
+> rustup component add rustfmt clippy
+> ```
+
 ## Code Standards
 
 - **Formatting**: run `cargo fmt` before committing.
 - **Linting**: run `cargo clippy -- -D warnings`; fix all warnings.
+- **License headers**: all `.rs` files must start with `// SPDX-License-Identifier: MIT` (see [LICENSE_HEADERS.md](docs/LICENSE_HEADERS.md)).
 - **Tests**: every new function must have at least one unit test.
 - **No unsafe**: do not use `unsafe` blocks.
 - **No std**: the contract crate is `#![no_std]`; keep it that way.
+
+## Branch Protection Rules
+
+The `main` branch is protected with the following enforced settings:
+
+- **Required reviews**: at least 1 approving review before merging.
+- **Required status checks**: all CI jobs (`test`, `build`, `security-audit`) must pass.
+- **No direct pushes**: commits must be submitted via a pull request; force-pushes are disabled.
+
+These rules are enforced via GitHub branch protection settings. Contributors cannot bypass them.
 
 ## Pull Request Guidelines
 
@@ -49,6 +97,22 @@ Open a GitHub Issue with:
 - Steps to reproduce (for bugs).
 - Expected vs actual behaviour.
 - Rust / Stellar CLI version (`rustc --version`, `stellar --version`).
+
+## Issue Triage
+
+**Label taxonomy**
+
+- `bug` – a defect in the code or documentation.
+- `enhancement` – a new feature or improvement.
+- `security` – security‑related issue.
+- `documentation` – docs improvements or corrections.
+- `question` – user questions or usage help.
+
+**SLA for first response**
+
+- All new issues receive an initial acknowledgement within **24 hours** on weekdays.
+- Critical security issues are responded to within **4 hours**.
+- Non‑critical issues aim for a response within **48 hours**.
 
 ## Security Vulnerabilities
 

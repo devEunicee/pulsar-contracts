@@ -62,7 +62,7 @@
                   "string": "desc"
                 },
                 {
-                  "string": "c@c.com"
+                  "string": "c@c.com "
                 },
                 {
                   "vec": [
@@ -157,7 +157,7 @@
                         "symbol": "order_id"
                       },
                       "val": {
-                        "string": "ORDER_001"
+                        "bytes": "4f524445525f303031"
                       }
                     },
                     {
@@ -179,7 +179,7 @@
                   ]
                 },
                 {
-                  "bytes": "7ed7ba8e00ad9817fadb6c46d091aa811b056a01f107431fafacc68d807429799b54723c571de387cf327c84124feb7d368d721e2f1f5d3f57edc32c1061ec03"
+                  "bytes": "22bab4026453b8ee99aa11c3d45c262fedc67ea071160656171cf0abf50eb98ceb2fd2f491c9780744f281bd445acc083d6b50a15466e2aa93a2fcc9d7525b0d"
                 },
                 {
                   "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
@@ -228,10 +228,10 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "string": "R1"
+                  "bytes": "5231"
                 },
                 {
-                  "string": "ORDER_001"
+                  "bytes": "4f524445525f303031"
                 },
                 {
                   "i128": {
@@ -262,7 +262,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "string": "R1"
+                  "bytes": "5231"
                 }
               ]
             }
@@ -351,7 +351,7 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "AllPayments"
+                  "symbol": "GlobalPaymentIndex"
                 }
               ]
             },
@@ -368,7 +368,7 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "AllPayments"
+                      "symbol": "GlobalPaymentIndex"
                     }
                   ]
                 },
@@ -376,9 +376,13 @@
                 "val": {
                   "vec": [
                     {
-                      "string": "ORDER_001"
+                      "bytes": "4f524445525f303031"
                     }
                   ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
                 }
               }
             },
@@ -457,7 +461,7 @@
                         "symbol": "contact_info"
                       },
                       "val": {
-                        "string": "c@c.com"
+                        "string": "c@c.com "
                       }
                     },
                     {
@@ -500,10 +504,13 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "MerchantPayments"
+                  "symbol": "MerchantPaymentChunk"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                },
+                {
+                  "u32": 0
                 }
               ]
             },
@@ -520,10 +527,13 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "MerchantPayments"
+                      "symbol": "MerchantPaymentChunk"
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 },
@@ -531,9 +541,13 @@
                 "val": {
                   "vec": [
                     {
-                      "string": "ORDER_001"
+                      "bytes": "4f524445525f303031"
                     }
                   ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
                 }
               }
             },
@@ -549,10 +563,13 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "PayerPayments"
+                  "symbol": "PayerPaymentChunk"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                },
+                {
+                  "u32": 0
                 }
               ]
             },
@@ -569,10 +586,13 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "PayerPayments"
+                      "symbol": "PayerPaymentChunk"
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 },
@@ -580,9 +600,13 @@
                 "val": {
                   "vec": [
                     {
-                      "string": "ORDER_001"
+                      "bytes": "4f524445525f303031"
                     }
                   ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
                 }
               }
             },
@@ -601,7 +625,7 @@
                   "symbol": "Payment"
                 },
                 {
-                  "string": "ORDER_001"
+                  "bytes": "4f524445525f303031"
                 }
               ]
             },
@@ -621,7 +645,7 @@
                       "symbol": "Payment"
                     },
                     {
-                      "string": "ORDER_001"
+                      "bytes": "4f524445525f303031"
                     }
                   ]
                 },
@@ -652,7 +676,7 @@
                         "symbol": "order_id"
                       },
                       "val": {
-                        "string": "ORDER_001"
+                        "bytes": "4f524445525f303031"
                       }
                     },
                     {
@@ -721,7 +745,7 @@
                   "symbol": "Refund"
                 },
                 {
-                  "string": "R1"
+                  "bytes": "5231"
                 }
               ]
             },
@@ -741,7 +765,7 @@
                       "symbol": "Refund"
                     },
                     {
-                      "string": "R1"
+                      "bytes": "5231"
                     }
                   ]
                 },
@@ -780,7 +804,7 @@
                         "symbol": "order_id"
                       },
                       "val": {
-                        "string": "ORDER_001"
+                        "bytes": "4f524445525f303031"
                       }
                     },
                     {
@@ -796,7 +820,7 @@
                         "symbol": "refund_id"
                       },
                       "val": {
-                        "string": "R1"
+                        "bytes": "5231"
                       }
                     },
                     {
