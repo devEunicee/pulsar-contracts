@@ -16,7 +16,7 @@ use alloc::vec::Vec as RustVec;
 use soroban_sdk::{Address, Bytes, BytesN, Env, Vec};
 
 use crate::error::PaymentError;
-use crate::types::{PaymentRecord, RefundRecord};
+use crate::types::PaymentRecord;
 
 /// Archive metadata for tracking archived records
 #[derive(Clone, Debug)]
@@ -134,29 +134,6 @@ pub fn archive_payment(
     Ok(metadata)
 }
 
-/// Archive a refund record
-pub fn archive_refund(
-    env: &Env,
-    record: &RefundRecord,
-    config: &ArchiveConfig,
-) -> Result<ArchiveMetadata, PaymentError> {
-    if !config.enabled {
-        return Err(PaymentError::Unauthorized);
-    }
-
-    let metadata = ArchiveMetadata {
-        archived_at: env.ledger().timestamp(),
-        retention_days: config.retention_days,
-        record_hash: BytesN::from_array(&[
-            0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-            23, 24, 25, 26, 27, 28, 29, 30, 31,
-        ]),
-        redacted: config.redact_sensitive_data,
-    };
-
-    Ok(metadata)
-}
-
 /// Create archive index entry for quick retrieval
 pub fn create_archive_index(
     order_id: Bytes,
@@ -172,7 +149,6 @@ pub fn create_archive_index(
 
 /// Get archive statistics
 pub fn get_archive_stats(
-    env: &Env,
     archived_payments_count: u32,
     archived_refunds_count: u32,
     last_job_run: u64,
