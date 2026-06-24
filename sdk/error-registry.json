@@ -1,0 +1,121 @@
+{
+  "version": "1.0.0",
+  "source": "contracts/payment-processing-contract/src/error.rs",
+  "errors": [
+    {
+      "code": 1,
+      "name": "Unauthorized",
+      "message": "Caller lacks permission to perform this action"
+    },
+    {
+      "code": 2,
+      "name": "AdminAlreadySet",
+      "message": "Admin has already been initialised"
+    },
+    {
+      "code": 10,
+      "name": "MerchantNotFound",
+      "message": "Merchant is not registered"
+    },
+    {
+      "code": 11,
+      "name": "MerchantAlreadyRegistered",
+      "message": "A merchant with this address is already registered"
+    },
+    {
+      "code": 12,
+      "name": "MerchantInactive",
+      "message": "Merchant account is deactivated"
+    },
+    {
+      "code": 20,
+      "name": "PaymentNotFound",
+      "message": "Order ID not found"
+    },
+    {
+      "code": 21,
+      "name": "PaymentAlreadyExists",
+      "message": "A payment with this order ID already exists"
+    },
+    {
+      "code": 22,
+      "name": "InvalidAmount",
+      "message": "Amount must be greater than zero"
+    },
+    {
+      "code": 23,
+      "name": "InvalidSignature",
+      "message": "Signature verification failed"
+    },
+    {
+      "code": 24,
+      "name": "PaymentExpired",
+      "message": "Order is past its expiry timestamp"
+    },
+    {
+      "code": 30,
+      "name": "RefundNotFound",
+      "message": "Refund ID not found"
+    },
+    {
+      "code": 31,
+      "name": "RefundAlreadyExists",
+      "message": "A refund with this ID already exists"
+    },
+    {
+      "code": 32,
+      "name": "RefundWindowExpired",
+      "message": "The 30-day refund window has passed"
+    },
+    {
+      "code": 33,
+      "name": "RefundAmountExceedsPayment",
+      "message": "Cumulative refund amount exceeds the original payment"
+    },
+    {
+      "code": 34,
+      "name": "RefundNotApproved",
+      "message": "Refund is not in Approved state"
+    },
+    {
+      "code": 35,
+      "name": "RefundAlreadyCompleted",
+      "message": "Refund has already been completed or rejected"
+    },
+    {
+      "code": 40,
+      "name": "MultisigNotFound",
+      "message": "Multisig payment not found"
+    },
+    {
+      "code": 41,
+      "name": "MultisigAlreadySigned",
+      "message": "This signer has already signed the multisig payment"
+    },
+    {
+      "code": 42,
+      "name": "MultisigAlreadyExecuted",
+      "message": "Multisig payment has already been executed"
+    },
+    {
+      "code": 43,
+      "name": "InsufficientSignatures",
+      "message": "Not all required signers have signed"
+    },
+    {
+      "code": 50,
+      "name": "InvalidInput",
+      "message": "General input validation failure"
+    },
+    {
+      "code": 51,
+      "name": "StorageError",
+      "message": "Storage operation failed"
+    },
+    {
+      "code": 52,
+      "name": "ArithmeticError",
+      "message": "Arithmetic overflow or underflow"
+    }
+  ]
+}
