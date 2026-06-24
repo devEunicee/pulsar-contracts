@@ -259,4 +259,8 @@ pub enum DataKey {
     AllowedToken(Address),
     Subscription(Bytes),
     MerchantStats(Address),
+    // Connection pooling storage keys
+    PoolConfig,
+    PoolStats,
+    PoolConnection(u32),
 }
