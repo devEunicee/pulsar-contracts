@@ -6,6 +6,7 @@ extern crate alloc;
 
 mod error;
 mod helper;
+mod pool;
 mod storage;
 mod types;
 
