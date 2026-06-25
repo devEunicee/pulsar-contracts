@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Multi-step Wizard Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; }
+    .step { display: none; }
+    .step.active { display: block; }
+    .steps-indicator { display:flex; gap:8px; margin-bottom:12px; }
+    .step-dot { width:12px; height:12px; border-radius:50%; background:#ddd; }
+    .step-dot.active { background:#0b8a0b; }
+    .nav { margin-top:12px; display:flex; gap:8px; }
+    @media (max-width:600px) { .nav { flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <h2>Multi-step Wizard (Demo)</h2>
+  <div class="steps-indicator" role="tablist" aria-label="Progress">
+    <div class="step-dot" id="dot-0"></div>
+    <div class="step-dot" id="dot-1"></div>
+    <div class="step-dot" id="dot-2"></div>
+  </div>
+
+  <form id="wizard">
+    <div class="step" id="step-0">
+      <h3>Step 1 — Basic</h3>
+      <label>Merchant name<br><input name="name" id="name" required maxlength="64"></label>
+    </div>
+    <div class="step" id="step-1">
+      <h3>Step 2 — Details</h3>
+      <label>Description<br><textarea name="desc" id="desc" maxlength="256"></textarea></label>
+    </div>
+    <div class="step" id="step-2">
+      <h3>Review</h3>
+      <div id="summary"></div>
+    </div>
+    <div class="nav">
+      <button type="button" id="back">Back</button>
+      <button type="button" id="next">Next</button>
+      <button type="button" id="skip">Skip</button>
+      <button type="submit" id="finish" class="hidden">Submit</button>
+    </div>
+  </form>
+
+  <script>
+    const steps = Array.from(document.querySelectorAll('.step'));
+    const dots = [document.getElementById('dot-0'),document.getElementById('dot-1'),document.getElementById('dot-2')];
+    const stateKey = 'wizard-state';
+    let idx = 0;
+
+    function loadState(){
+      const raw = localStorage.getItem(stateKey);
+      if(raw) {
+        try{ const s=JSON.parse(raw); document.getElementById('name').value=s.name||''; document.getElementById('desc').value=s.desc||''; idx=s.idx||0; }catch(e){}
+      }
+    }
+    function saveState(){
+      const s = { name: document.getElementById('name').value, desc: document.getElementById('desc').value, idx };
+      localStorage.setItem(stateKey, JSON.stringify(s));
+    }
+
+    function render(){
+      steps.forEach((s,i)=> s.classList.toggle('active', i===idx));
+      dots.forEach((d,i)=> d.classList.toggle('active', i<=idx));
+      document.getElementById('summary').textContent = `Name: ${document.getElementById('name').value}\nDesc: ${document.getElementById('desc').value}`;
+      saveState();
+      document.getElementById('finish').classList.toggle('hidden', idx!==steps.length-1);
+    }
+
+    document.getElementById('next').addEventListener('click', ()=>{ if(idx<steps.length-1){ idx++; render(); }});
+    document.getElementById('back').addEventListener('click', ()=>{ if(idx>0){ idx--; render(); }});
+    document.getElementById('skip').addEventListener('click', ()=>{ idx = Math.min(idx+1, steps.length-1); render(); });
+
+    document.getElementById('wizard').addEventListener('submit', e=>{ e.preventDefault(); alert('Submitted (demo)'); localStorage.removeItem(stateKey); });
+
+    loadState(); render();
+  </script>
+</body>
+</html>
