@@ -220,10 +220,45 @@ fn test_set_admin_twice_fails() {
 }
 
 #[test]
+fn test_set_admin_threshold_equals_len_passes() {
+    let (env, client) = setup();
+    let a1 = Address::generate(&env);
+    let a2 = Address::generate(&env);
+    // threshold == admins.len() should succeed
+    client.set_admin(&vec![&env, a1.clone(), a2.clone()], &2);
+}
+
+#[test]
+fn test_set_admin_threshold_exceeds_len_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    // threshold > admins.len() should fail
+    let result = client.try_set_admin(&vec![&env, admin.clone()], &2);
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
+fn test_set_admin_threshold_zero_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    // threshold == 0 should fail
+    let result = client.try_set_admin(&vec![&env, admin.clone()], &0);
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
+fn test_set_admin_empty_admins_fails() {
+    let (env, client) = setup();
+    // empty admins list should fail
+    let result = client.try_set_admin(&vec![&env], &1);
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
 fn test_get_version_after_set_admin() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
-    client.set_admin(&admin);
+    client.set_admin(&vec![&env, admin.clone()], &1);
     assert_eq!(client.get_version(), 1);
 }
 
@@ -296,7 +331,7 @@ fn test_reactivate_merchant_success() {
     let payer = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
+    client.set_admin(&vec![&env, admin.clone()], &1);
     client.register_merchant(
         &merchant,
         &str(&env, "Store"),
@@ -368,7 +403,7 @@ fn test_global_stats_overflow_fails() {
     let payer = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
+    client.set_admin(&vec![&env, admin.clone()], &1);
     client.register_merchant(
         &merchant,
         &str(&env, "Store"),
@@ -711,13 +746,15 @@ fn test_large_payment_index_growth() {
     let payer = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
+    client.set_admin(&vec![&env, admin.clone()], &1);
     client.register_merchant(
         &merchant,
         &str(&env, "Store"),
         &str(&env, "desc"),
         &str(&env, "c@c.com"),
         &MerchantCategory::Retail,
+    
+        &None,
     );
     mint(&env, &token, &admin, &payer, 1000000);
 
@@ -1039,8 +1076,8 @@ fn test_set_cleanup_period() {
 fn test_set_cleanup_period_zero_fails() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
-    client.set_admin(&admin);
-    let result = client.try_set_payment_cleanup_period(&admin, &0);
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    let result = client.try_set_payment_cleanup_period(&vec![&env, admin.clone()], &0);
     assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
 }
 
@@ -1050,13 +1087,13 @@ fn test_set_cleanup_period_valid_is_persisted() {
     let (admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
 
     // Set a 1-second cleanup period
-    client.set_payment_cleanup_period(&admin, &1);
+    client.set_payment_cleanup_period(&vec![&env, admin.clone()], &1);
 
     // Advance time past the cutoff
     env.ledger().set_timestamp(100);
 
     // The custom period must be in effect: cleanup removes the payment
-    let count = client.cleanup_expired_payments(&admin);
+    let count = client.cleanup_expired_payments(&vec![&env, admin.clone()]);
     assert_eq!(count, 1);
     let result = client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
     assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
@@ -1118,13 +1155,15 @@ fn test_get_global_payment_stats_date_filters_all_and_none() {
     let payer = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
+    client.set_admin(&vec![&env, admin.clone()], &1);
     client.register_merchant(
         &merchant,
         &str(&env, "Store"),
         &str(&env, "desc"),
         &str(&env, "contact@store.com"),
         &MerchantCategory::Retail,
+    
+        &None,
     );
     mint(&env, &token, &admin, &payer, 5000);
 
@@ -1146,11 +1185,11 @@ fn test_get_global_payment_stats_date_filters_all_and_none() {
     let (pk2, sig2) = sign_order(&env, &order2);
     client.process_payment_with_signature(&payer, &order2, &sig2, &pk2);
 
-    let stats = client.get_global_payment_stats(&admin, &Some(500), &Some(2500));
+    let stats = client.get_global_payment_stats(&vec![&env, admin.clone()], &Some(500), &Some(2500));
     assert_eq!(stats.total_payments, 2);
     assert_eq!(stats.total_volume, 3000);
 
-    let stats = client.get_global_payment_stats(&admin, &Some(2501), &Some(3500));
+    let stats = client.get_global_payment_stats(&vec![&env, admin.clone()], &Some(2501), &Some(3500));
     assert_eq!(stats.total_payments, 0);
     assert_eq!(stats.total_volume, 0);
 }
@@ -1263,7 +1302,7 @@ fn test_cleanup_no_expired_returns_zero() {
     let (env, client) = setup();
     let (admin, _merchant, _payer, _token) = setup_paid_order(&env, &client);
     // Default period is 90 days; payment was just made — nothing expired
-    let count = client.cleanup_expired_payments(&admin);
+    let count = client.cleanup_expired_payments(&vec![&env, admin.clone()]);
     assert_eq!(count, 0);
 }
 
@@ -1275,16 +1314,18 @@ fn test_cleanup_some_expired_only_removes_expired() {
     let payer = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
+    client.set_admin(&vec![&env, admin.clone()], &1);
     client.register_merchant(
         &merchant,
         &str(&env, "Store"),
         &str(&env, "desc"),
         &str(&env, "c@c.com"),
         &MerchantCategory::Retail,
+    
+        &None,
     );
     mint(&env, &token, &admin, &payer, 10000);
-    client.set_payment_cleanup_period(&admin, &3600); // 1h
+    client.set_payment_cleanup_period(&vec![&env, admin.clone()], &3600); // 1h
 
     // Payment at t=0 (will be expired after 1h)
     let order1 = PaymentOrder {
@@ -1315,7 +1356,7 @@ fn test_cleanup_some_expired_only_removes_expired() {
 
     // Advance to t=7201: OLD_001 is expired (age > 1h), NEW_001 is not
     env.ledger().with_mut(|l| l.timestamp = 7201);
-    let count = client.cleanup_expired_payments(&admin);
+    let count = client.cleanup_expired_payments(&vec![&env, admin.clone()]);
     assert_eq!(count, 1);
 
     assert_eq!(
@@ -1329,10 +1370,10 @@ fn test_cleanup_some_expired_only_removes_expired() {
 fn test_cleanup_all_expired_clears_index() {
     let (env, client) = setup();
     let (admin, _merchant, payer, _token) = setup_paid_order(&env, &client);
-    client.set_payment_cleanup_period(&admin, &3600);
+    client.set_payment_cleanup_period(&vec![&env, admin.clone()], &3600);
     env.ledger().set_timestamp(7201);
 
-    let count = client.cleanup_expired_payments(&admin);
+    let count = client.cleanup_expired_payments(&vec![&env, admin.clone()]);
     assert_eq!(count, 1);
     assert_eq!(
         client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001")),

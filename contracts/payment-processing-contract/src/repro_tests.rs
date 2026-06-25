@@ -155,8 +155,8 @@ fn test_initiate_multisig_max_signers_exceeded() {
     let payer = Address::generate(&env);
     let token = create_token(&env, &admin);
 
-    client.set_admin(&admin);
-    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail);
+    client.set_admin(&vec![&env, admin.clone()], &1);
+    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail, &None);
     mint(&env, &token, &admin, &payer, 1000);
 
     let mut signers = Vec::new(&env);

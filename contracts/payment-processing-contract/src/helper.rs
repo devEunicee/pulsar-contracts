@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Bytes, BytesN, Env, String};
+use soroban_sdk::{Address, Bytes, BytesN, Env, String, Vec};
 
 use crate::error::PaymentError;
 use crate::storage;
@@ -12,6 +12,35 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<(), PaymentError> {
         return Err(PaymentError::Unauthorized);
     }
     Ok(())
+}
+
+/// Require that the caller set satisfies the stored N-of-M admin threshold.
+/// Each address in `admins` must call require_auth() and be in the stored config.
+/// Falls back to single-admin check if AdminConfig is not set.
+pub fn require_multi_admin(env: &Env, admins: Vec<Address>) -> Result<(), PaymentError> {
+    if let Some(config) = storage::get_admin_config(env) {
+        let mut valid_count: u32 = 0;
+        for addr in admins.iter() {
+            if config.admins.contains(&addr) {
+                addr.require_auth();
+                valid_count += 1;
+            }
+        }
+        if valid_count < config.threshold {
+            return Err(PaymentError::Unauthorized);
+        }
+        Ok(())
+    } else {
+        // Legacy single-admin fallback
+        let admin = storage::get_admin(env).ok_or(PaymentError::Unauthorized)?;
+        for addr in admins.iter() {
+            if addr == admin {
+                addr.require_auth();
+                return Ok(());
+            }
+        }
+        Err(PaymentError::Unauthorized)
+    }
 }
 
 /// Validate that `admin` is not the zero/burn address.

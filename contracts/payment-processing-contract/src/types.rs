@@ -169,9 +169,13 @@ pub struct AdminConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
+    AdminConfig,
     ContractVersion,
     Merchant(Address),
     Payment(Bytes),
+    MerchantPayments(Address),
+    PayerPayments(Address),
+    GlobalPaymentIndex,
     MerchantPaymentChunk(Address, u32),
     MerchantPaymentCount(Address),
     PayerPaymentChunk(Address, u32),

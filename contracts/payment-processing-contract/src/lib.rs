@@ -20,8 +20,9 @@ use soroban_sdk::{
 use error::PaymentError;
 use storage::REFUND_WINDOW;
 use types::{
-    DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
-    PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
+    AdminConfig, DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter,
+    PaymentOrder, PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField,
+    SortOrder,
 };
 
 #[contract]
@@ -36,12 +37,25 @@ impl PaymentContract {
         if storage::get_admin_config(&env).is_some() || storage::get_admin(&env).is_some() {
             return Err(PaymentError::AdminAlreadySet);
         }
-        helper::validate_admin_address(&env, &admin)?;
-        admin.require_auth();
-        storage::set_admin(&env, &admin);
+        if admins.is_empty() {
+            return Err(PaymentError::InvalidInput);
+        }
+        if threshold == 0 || threshold > admins.len() {
+            return Err(PaymentError::InvalidInput);
+        }
+        for admin in admins.iter() {
+            admin.require_auth();
+        }
+        let config = AdminConfig {
+            admins: admins.clone(),
+            threshold,
+        };
+        storage::set_admin_config(&env, &config);
+        // Also store first admin in legacy slot for backwards-compatible reads
+        storage::set_admin(&env, &admins.get(0).unwrap());
         storage::set_contract_version(&env, 1);
         env.events()
-            .publish((DataKey::Admin,), (String::from_str(&env, "admin_set"), admin));
+            .publish((DataKey::Admin,), (String::from_str(&env, "admin_set"), admins));
         Ok(())
     }
 
@@ -137,7 +151,7 @@ impl PaymentContract {
         storage::save_merchant(&env, &merchant);
         env.events().publish(
             (String::from_str(&env, "merchant_deactivated"),),
-            (merchant_address, caller),
+            merchant_address,
         );
         Ok(())
     }
@@ -354,6 +368,7 @@ impl PaymentContract {
         order_id: Bytes,
         refunded_amount: i128,
     ) -> Result<(), PaymentError> {
+        let _ = (env, caller, order_id, refunded_amount);
         // Intentionally removed from public ABI: refund state must be modified
         // exclusively via the refund workflow (initiate/approve/execute).
         Err(PaymentError::InvalidInput)
@@ -444,7 +459,7 @@ impl PaymentContract {
             return Err(PaymentError::InvalidInput);
         }
 
-        let record =
+        let mut record =
             storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
 
         if caller != record.payer && caller != record.merchant_address {
