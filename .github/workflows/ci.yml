@@ -115,6 +115,43 @@ jobs:
             target/wasm32-unknown-unknown/release/payment_processing_contract.wasm
             target/wasm32-unknown-unknown/release/payment_processing_contract.wasm.sha256
 
+  migration-check:
+    name: Migration Dry-Run
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pulsar
+          POSTGRES_PASSWORD: pulsar
+          POSTGRES_DB: pulsar_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://pulsar:pulsar@localhost:5432/pulsar_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: db/package.json
+      - run: npm install
+        working-directory: db
+      - name: Apply migrations
+        run: node migrate.js up
+        working-directory: db
+      - name: Verify status
+        run: node migrate.js status
+        working-directory: db
+      - name: Rollback test
+        run: node migrate.js down
+        working-directory: db
+
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
