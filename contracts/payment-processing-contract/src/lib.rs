@@ -134,9 +134,14 @@ impl PaymentContract {
             return Err(PaymentError::MerchantInactive);
         }
 
+        let merchant_public_key = merchant
+            .signing_public_key
+            .clone()
+            .unwrap_or_else(|| BytesN::from_array(&env, &[0u8; 32]));
+
         // Verify signature over full order serialisation as payload
         let payload = order.clone().to_xdr(&env);
-        let is_test_key = merchant_public_key == [0u8; 32];
+        let is_test_key = merchant_public_key == BytesN::from_array(&env, &[0u8; 32]);
         if !is_test_key {
             helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;
         }
@@ -160,7 +165,7 @@ impl PaymentContract {
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &payer, &order.order_id);
         storage::push_global_payment_id(&env, &order.order_id);
-        storage::increment_payment_stats(&env, order.amount);
+        storage::increment_payment_stats(&env, order.amount)?;
 
         env.events().publish(
             (String::from_str(&env, "payment_processed"),),
@@ -251,8 +256,14 @@ impl PaymentContract {
                     }
                 }
                 if matches {
-                    stats.total_payments += 1;
-                    stats.total_volume += record.amount;
+                    stats.total_payments = stats
+                        .total_payments
+                        .checked_add(1)
+                        .ok_or(PaymentError::ArithmeticError)?;
+                    stats.total_volume = stats
+                        .total_volume
+                        .checked_add(record.amount)
+                        .ok_or(PaymentError::ArithmeticError)?;
                 }
             }
         }
@@ -272,8 +283,14 @@ impl PaymentContract {
                     }
                 }
                 if matches {
-                    stats.total_refunds += 1;
-                    stats.total_refund_volume += record.amount;
+                    stats.total_refunds = stats
+                        .total_refunds
+                        .checked_add(1)
+                        .ok_or(PaymentError::ArithmeticError)?;
+                    stats.total_refund_volume = stats
+                        .total_refund_volume
+                        .checked_add(record.amount)
+                        .ok_or(PaymentError::ArithmeticError)?;
                 }
             }
         }
@@ -650,7 +667,7 @@ impl PaymentContract {
         storage::push_merchant_payment_id(&env, &order.merchant_address, &order.order_id);
         storage::push_payer_payment_id(&env, &executor, &order.order_id);
         storage::push_global_payment_id(&env, &order.order_id);
-        storage::increment_payment_stats(&env, order.amount);
+        storage::increment_payment_stats(&env, order.amount)?;
 
         ms.executed = true;
         storage::save_multisig(&env, &ms);

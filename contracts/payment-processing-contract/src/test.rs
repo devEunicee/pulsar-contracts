@@ -13,7 +13,8 @@ use ed25519_dalek::{Signer, SigningKey};
 
 use crate::{
     error::PaymentError,
-    types::{MerchantCategory, PaymentOrder, PaymentStatus, RefundStatus, SortField, SortOrder},
+    storage,
+    types::{MerchantCategory, GlobalStats, PaymentOrder, PaymentStatus, RefundStatus, SortField, SortOrder},
     PaymentContract, PaymentContractClient,
 };
 
@@ -689,6 +690,42 @@ fn test_set_cleanup_period() {
     let admin = Address::generate(&env);
     client.set_admin(&admin);
     client.set_payment_cleanup_period(&admin, &86400);
+}
+
+#[test]
+fn test_payment_stats_overflow_returns_arithmetic_error() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 2000);
+
+    storage::save_global_stats(
+        &env,
+        &GlobalStats {
+            total_payments: 0,
+            total_volume: i128::MAX,
+            total_refunds: 0,
+            total_refund_volume: 0,
+        },
+    );
+
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (pub_key, sig) = sign_order(&env, &order);
+    let result = client.try_process_payment_with_signature(&payer, &order, &sig);
+
+    assert_eq!(result, Err(Ok(PaymentError::ArithmeticError)));
 }
 
 #[test]
