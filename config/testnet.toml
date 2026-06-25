@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: MIT
+#
+# Testnet environment configuration for Pulsar contract seeding.
+
+[network]
+name = "testnet"
+
+[contract]
+# Set via environment variable or prompt
+
+[admin]
+account = "admin"
+
+[token]
+account = "token_issuer"
+code = "USDC"
+mint_amount = 1000000
+
+[merchants]
+count = 3
+categories = ["Retail", "Food", "Services"]
+name_prefix = "Test Merchant"
+
+[payments]
+count = 10
+amount_min = 100000
+amount_max = 500000
+description_prefix = "Test payment"
+
+[refunds]
+count = 2
+amount_percentage = 50
+reason = "Test refund"
+
+[payer]
+account = "payer"
+initial_balance = 10000000
+
+[logging]
+level = "info"
+verbose = false
