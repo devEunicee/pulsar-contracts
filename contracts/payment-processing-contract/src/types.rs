@@ -46,6 +46,10 @@ pub struct PaymentOrder {
     pub token: Address,
     pub amount: i128,
     pub description: String,
+    /// Unix timestamp (seconds) when the order expires. A value of `0`
+    /// is treated as "never expires" (an order that does not expire).
+    /// This special-case is relied upon by existing integrations and is
+    /// intentionally accepted by the contract.
     pub expires_at: u64,
 }
 
@@ -105,6 +109,27 @@ pub struct MultisigPayment {
     pub created_at: u64,
 }
 
+// ── Subscriptions ───────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionState {
+    pub subscription_id: Bytes,
+    pub merchant_address: Address,
+    pub subscriber: Address,
+    pub active: bool,
+    pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionPage {
+    pub records: Vec<SubscriptionState>,
+    /// Opaque pagination cursor pointing to the last returned subscription id.
+    pub next_cursor: Option<Bytes>,
+    pub total: u32,
+}
+
 // ── Query helpers ─────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -147,6 +172,15 @@ pub struct PaymentFilter {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaymentPage {
     pub records: Vec<PaymentRecord>,
+    /// Opaque pagination cursor pointing to the last record on the page.
+    ///
+    /// Current format: raw `order_id` bytes of the last record. Callers that
+    /// transport the cursor over textual channels (CLI, HTTP) should encode
+    /// it (for example as base64). The contract treats the cursor as an opaque
+    /// `Bytes` value and will start the next page after the matching `order_id`.
+    ///
+    /// NOTE: changing this format is a breaking change. Any future change
+    /// should use a versioned encoding and include a migration note in an ADR.
     pub next_cursor: Option<Bytes>,
     pub total: u32,
 }

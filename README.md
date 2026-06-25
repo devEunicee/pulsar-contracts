@@ -415,6 +415,9 @@ stellar contract invoke --id $CONTRACT_ID --source-account <PAYER_KEY> --network
   --order '{"order_id":"ORDER_001","merchant_address":"...","payer":"...","token":"...","amount":1000,"description":"desc","expires_at":0}' \
   --signature <64_BYTE_HEX> \
   --merchant_public_key <32_BYTE_HEX>
+Note: the `expires_at` field is a UNIX timestamp in seconds. A value of
+`0` is treated as "never expires" (the order will not be rejected due to
+expiry). This behaviour is intentional and documented in the contract types.
 ```
 
 ---
@@ -470,6 +473,11 @@ stellar contract invoke --id $CONTRACT_ID --source-account <PAYER_KEY> --network
 **Sort fields**: `Date` | `Amount`  
 **Sort orders**: `Ascending` | `Descending`  
 **Pagination**: pass the `next_cursor` from the previous response as `cursor`. Max 100 results per page.
+
+Cursor format: the returned `next_cursor` is the raw `order_id` bytes of the
+last record. When passing the cursor through a textual interface (CLI or
+HTTP), encode it (for example base64). The cursor is opaque and callers
+should treat it as an opaque token rather than attempting to parse it.
 
 #### `get_global_payment_stats` *(admin only)*
 
