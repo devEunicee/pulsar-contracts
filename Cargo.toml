@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "contracts/payment-processing-contract",
     "services/cache-layer",
+    "services/subscription-payment-service",
 ]
 
 [profile.release]
