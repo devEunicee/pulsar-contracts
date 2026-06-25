@@ -1,0 +1,33 @@
+# Mainnet environment configuration
+# This file is safe to commit — it contains no secrets.
+
+[network]
+# Soroban RPC endpoint for Stellar Mainnet
+rpc_url = "https://mainnet.sorobanrpc.com"
+network_passphrase = "Public Global Stellar Network ; September 2015"
+horizon_url = "https://horizon.stellar.org"
+
+[contract]
+# Contract ID on mainnet — update after each deployment.
+contract_id = ""
+
+[admin]
+# Public key of the mainnet admin account (not a secret — safe to commit).
+# The corresponding secret key must be set in the environment variable:
+#   ADMIN_SECRET_KEY=S...
+admin_public_key = ""
+
+[token]
+# Address of the native XLM token wrapper on mainnet.
+native_token_address = "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+
+# ── Secret values (NEVER commit these) ────────────────────────────────────────
+# The following values must be supplied via environment variables at runtime:
+#
+#   ADMIN_SECRET_KEY   — Stellar secret key (S...) for the mainnet admin account
+#
+# ⚠️  MAINNET WARNING: Never store secret keys in files. Always use a secrets
+#     manager, hardware wallet, or CI/CD secret injection for mainnet operations.
+#
+# Example (.env file, gitignored):
+#   ADMIN_SECRET_KEY=S...
