@@ -22,3 +22,7 @@ Thumbs.db
 
 # NOTE: Cargo.lock is intentionally committed for contract crates
 # to ensure reproducible builds.
+
+# API
+api/node_modules/
+api/.env
