@@ -210,3 +210,14 @@ pub fn increment_refund_stats(env: &Env, amount: i128) -> Result<(), PaymentErro
     save_global_stats(env, &stats);
     Ok(())
 }
+
+pub fn decrement_payment_stats(env: &Env, amount: i128, refunded_amount: i128) {
+    let mut stats = get_global_stats(env);
+    stats.total_payments = stats.total_payments.saturating_sub(1);
+    stats.total_volume = stats.total_volume.saturating_sub(amount);
+    stats.total_refund_volume = stats.total_refund_volume.saturating_sub(refunded_amount);
+    if refunded_amount > 0 {
+        stats.total_refunds = stats.total_refunds.saturating_sub(1);
+    }
+    save_global_stats(env, &stats);
+}

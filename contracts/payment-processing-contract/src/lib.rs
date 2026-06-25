@@ -136,9 +136,11 @@ impl PaymentContract {
 
         // Verify signature over full order serialisation as payload
         let payload = order.clone().to_xdr(&env);
-        let is_test_key = merchant_public_key == [0u8; 32];
-        if !is_test_key {
-            helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;
+        if let Some(merchant_public_key) = merchant.signing_public_key {
+            let is_test_key = merchant_public_key == BytesN::from_array(&env, &[0u8; 32]);
+            if !is_test_key {
+                helper::verify_signature(&env, &merchant_public_key, &payload, &signature)?;
+            }
         }
 
         // Transfer tokens from payer to merchant
@@ -300,9 +302,9 @@ impl PaymentContract {
         order_id: Bytes,
     ) -> Result<(), PaymentError> {
         helper::require_admin(&env, &admin)?;
-        if storage::get_payment(&env, &order_id).is_none() {
-            return Err(PaymentError::PaymentNotFound);
-        }
+        let record =
+            storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
+        storage::decrement_payment_stats(&env, record.amount, record.refunded_amount);
         storage::remove_payment(&env, &order_id);
         Ok(())
     }

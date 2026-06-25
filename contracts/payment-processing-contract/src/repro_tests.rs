@@ -148,3 +148,64 @@ fn test_pagination_cursor_inverted() {
     assert_eq!(page2_desc.records.get(0).unwrap().amount, 300);
     assert_eq!(page2_desc.records.get(1).unwrap().amount, 200);
 }
+
+#[test]
+fn test_archive_payment_decrements_stats() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail);
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let order = make_order(&env, &merchant, &payer, &token);
+    client.process_payment_with_signature(&payer, &order, &BytesN::from_array(&env, &[0u8; 64]));
+
+    let stats_before = client.get_global_payment_stats(&admin, &None, &None);
+    assert_eq!(stats_before.total_payments, 1);
+    assert_eq!(stats_before.total_volume, 1000);
+
+    client.archive_payment_record(&admin, &order.order_id);
+
+    let stats_after = client.get_global_payment_stats(&admin, &None, &None);
+    assert_eq!(stats_after.total_payments, 0);
+    assert_eq!(stats_after.total_volume, 0);
+}
+
+#[test]
+fn test_archive_payment_with_refund_decrements_both_stats() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(&merchant, &str(&env, "M"), &str(&env, "D"), &str(&env, "E"), &MerchantCategory::Retail);
+    mint(&env, &token, &admin, &payer, 5000);
+    mint(&env, &token, &admin, &merchant, 5000);
+
+    let order = make_order(&env, &merchant, &payer, &token);
+    client.process_payment_with_signature(&payer, &order, &BytesN::from_array(&env, &[0u8; 64]));
+
+    client.initiate_refund(&payer, &bytes(&env, "R1"), &order.order_id, &500, &str(&env, "reason"));
+    client.approve_refund(&merchant, &bytes(&env, "R1"));
+    client.execute_refund(&merchant, &bytes(&env, "R1"));
+
+    let stats_before = client.get_global_payment_stats(&admin, &None, &None);
+    assert_eq!(stats_before.total_payments, 1);
+    assert_eq!(stats_before.total_volume, 1000);
+    assert_eq!(stats_before.total_refunds, 1);
+    assert_eq!(stats_before.total_refund_volume, 500);
+
+    client.archive_payment_record(&admin, &order.order_id);
+
+    let stats_after = client.get_global_payment_stats(&admin, &None, &None);
+    assert_eq!(stats_after.total_payments, 0);
+    assert_eq!(stats_after.total_volume, 0);
+    assert_eq!(stats_after.total_refunds, 0);
+    assert_eq!(stats_after.total_refund_volume, 0);
+}
