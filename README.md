@@ -428,6 +428,9 @@ stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network
 | `multisig_initiated` | `initiate_multisig_payment` |
 | `multisig_signed` | `sign_multisig_payment` |
 | `multisig_executed` | `execute_multisig_payment` |
+| `subscription_created` | `create_subscription` |
+| `subscription_charged` | `process_subscription_payment` |
+| `subscription_cancelled` | `cancel_subscription` |
 
 ---
 

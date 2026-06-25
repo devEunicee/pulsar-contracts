@@ -1,7 +1,15 @@
 use soroban_sdk::{Address, Bytes, Env, String, Vec};
 
 use crate::error::PaymentError;
-use crate::types::{DataKey, GlobalStats, Merchant, MultisigPayment, PaymentRecord, RefundRecord};
+use crate::types::{
+    DataKey,
+    GlobalStats,
+    Merchant,
+    MultisigPayment,
+    PaymentRecord,
+    RefundRecord,
+    SubscriptionPlan,
+};
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
@@ -112,6 +120,18 @@ pub fn save_refund(env: &Env, refund: &RefundRecord) {
     env.storage()
         .persistent()
         .set(&DataKey::Refund(refund.refund_id.clone()), refund);
+}
+
+pub fn get_subscription(env: &Env, subscription_id: &Bytes) -> Option<SubscriptionPlan> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Subscription(subscription_id.clone()))
+}
+
+pub fn save_subscription(env: &Env, subscription: &SubscriptionPlan) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Subscription(subscription.subscription_id.clone()), subscription);
 }
 
 pub fn get_all_refund_ids(env: &Env) -> Vec<Bytes> {
