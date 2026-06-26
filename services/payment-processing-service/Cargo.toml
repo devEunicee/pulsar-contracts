@@ -1,0 +1,18 @@
+[package]
+name = "payment-processing-service"
+version = "0.1.0"
+edition = "2021"
+authors = ["Pulsar Contributors"]
+description = "Off-chain payment processing service for Pulsar smart contract integration"
+license = "MIT"
+repository = "https://github.com/devEunicee/pulsar-contracts"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+log = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+serde_yaml = "0.9"

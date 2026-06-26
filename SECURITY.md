@@ -34,3 +34,13 @@ We will keep you informed of progress throughout the process and credit you in t
 ## Scope
 
 This policy covers the smart contract code in this repository. Issues in third-party dependencies (e.g. `soroban-sdk`) should be reported to their respective maintainers.
+
+---
+
+## Mainnet Security Audit (SEC-001)
+
+The Pulsar contract handles real token transfers. **An independent security audit by a recognised Soroban/Stellar smart contract auditor is required before any mainnet deployment.**
+
+All Critical and High severity findings must be resolved before deployment. The full audit report will be published in [`docs/security-audit.md`](docs/security-audit.md) once completed.
+
+See [`docs/security-audit.md`](docs/security-audit.md) for the full audit scope, recommended auditors, pre-audit checklist, and deployment gate criteria.
