@@ -26,6 +26,7 @@ Pulsar is a comprehensive payment-processing smart contract for the Stellar Soro
   - [Refunds](#refunds)
   - [Multi-Signature Payments](#multi-signature-payments)
   - [Admin Config](#admin-config)
+  - [Utility](#utility)
 - [Events](#events)
 - [Error Codes](#error-codes)
 - [Contributing](#contributing)
@@ -411,6 +412,23 @@ Default: 90 days (7 776 000 seconds).
 stellar contract invoke --id $CONTRACT_ID --source-account <ADMIN_KEY> --network local \
   -- set_payment_cleanup_period --admin <ADDRESS> --period 7776000
 ```
+
+---
+
+### Utility
+
+#### `ping`
+
+Permissionless health-check. Callable by anyone — no authentication required.
+Returns the current ledger timestamp and bumps the contract instance TTL.
+Has no side-effects beyond the TTL extension.
+
+```bash
+stellar contract invoke --id $CONTRACT_ID --source-account <ANY_KEY> --network local \
+  -- ping
+```
+
+Returns: `u64` — current ledger timestamp (Unix seconds).
 
 ---
 

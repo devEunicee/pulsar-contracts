@@ -553,6 +553,16 @@ impl PaymentContract {
         Ok(())
     }
 
+    // ── Utility ───────────────────────────────────────────────────────────────
+
+    /// Health-check. Permissionless — callable by anyone.
+    /// Returns the current ledger timestamp and bumps the contract instance TTL.
+    /// No auth required, no side-effects beyond the TTL bump.
+    pub fn ping(env: Env) -> u64 {
+        env.storage().instance().extend_ttl(100, 100);
+        env.ledger().timestamp()
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     fn paginate_payments(
