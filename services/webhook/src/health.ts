@@ -1,0 +1,90 @@
+import { Pool } from "pg";
+import { rpc } from "@stellar/stellar-sdk";
+
+const DATABASE_URL = process.env.DATABASE_URL ?? "";
+const RPC_URL = process.env.RPC_URL ?? "https://soroban-testnet.stellar.org";
+const CONTRACT_ID = process.env.CONTRACT_ID ?? "";
+const pool = new Pool({ connectionString: DATABASE_URL });
+const DEFAULT_TIMEOUT_MS = 3000;
+
+export type ComponentStatus = {
+  status: "ok" | "down";
+  durationMs?: number;
+  error?: string;
+  details?: unknown;
+};
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
+export async function checkDatabase(): Promise<ComponentStatus> {
+  const start = Date.now();
+  if (!DATABASE_URL) {
+    throw new Error("DATABASE_URL is not configured");
+  }
+
+  const result = await withTimeout(pool.query("SELECT 1 AS ok"), DEFAULT_TIMEOUT_MS, "database check");
+  const durationMs = Date.now() - start;
+
+  if (result.rows.length === 1 && result.rows[0].ok === 1) {
+    return { status: "ok", durationMs };
+  }
+
+  return { status: "down", durationMs, error: "unexpected database response" };
+}
+
+export async function checkRpcHealth(rpcUrl = RPC_URL): Promise<ComponentStatus> {
+  const start = Date.now();
+  const server = new rpc.Server(rpcUrl);
+  const health = await withTimeout(server.getHealth(), DEFAULT_TIMEOUT_MS, "RPC health check");
+  const durationMs = Date.now() - start;
+
+  if (health.status === "healthy") {
+    return { status: "ok", durationMs, details: health };
+  }
+
+  return { status: "down", durationMs, details: health };
+}
+
+export async function checkContractHealth(contractId = CONTRACT_ID, rpcUrl = RPC_URL): Promise<ComponentStatus> {
+  const start = Date.now();
+  if (!contractId) {
+    throw new Error("CONTRACT_ID is not configured");
+  }
+
+  const server = new rpc.Server(rpcUrl);
+  const wasmBuffer = await withTimeout(server.getContractWasmByContractId(contractId), DEFAULT_TIMEOUT_MS, "contract verification");
+  const durationMs = Date.now() - start;
+
+  if (wasmBuffer && wasmBuffer.length > 0) {
+    return { status: "ok", durationMs, details: { wasmLength: wasmBuffer.length } };
+  }
+
+  return { status: "down", durationMs, error: "contract was not found or has no WASM payload" };
+}
+
+function downStatus(error: string): ComponentStatus {
+  return { status: "down", error };
+}
+
+export async function checkDependencies(contractId = CONTRACT_ID, rpcUrl = RPC_URL): Promise<{ database: ComponentStatus; rpc: ComponentStatus; contract: ComponentStatus }> {
+  const [database, rpcHealth, contract] = await Promise.all([
+    checkDatabase().catch((err) => downStatus(err instanceof Error ? err.message : String(err))),
+    checkRpcHealth(rpcUrl).catch((err) => downStatus(err instanceof Error ? err.message : String(err))),
+    checkContractHealth(contractId, rpcUrl).catch((err) => downStatus(err instanceof Error ? err.message : String(err))),
+  ]);
+
+  return { database, rpc: rpcHealth, contract };
+}
