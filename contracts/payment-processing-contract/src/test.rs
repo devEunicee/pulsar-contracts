@@ -1346,6 +1346,50 @@ fn test_multisig_payment_expiry() {
     assert_eq!(client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_EXPIRY")), Err(Ok(PaymentError::PaymentExpired)));
 }
 
+// SC-036: when expires_at == 0 the contract must apply DefaultMultisigExpiry
+// rather than treating 0 as an always-expired timestamp.
+#[test]
+fn test_multisig_zero_expires_at_applies_default_expiry() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
+    mint(&env, &token, &signer1, 5000);
+
+    // Build an order and initiate; initiate_multisig_payment always sets a real
+    // expires_at, so we fast-forward time to within the 24-hour default window
+    // to test sign succeeds, then past it to test PaymentExpired.
+    let order = PaymentOrder {
+        order_id: bytes(&env, "MS_ZERO_EXP"),
+        merchant_address: merchant.clone(),
+        payer: signer1.clone(),
+        token: token.clone(),
+        amount: 500,
+        description: str(&env, "zero expiry test"),
+        expires_at: 0,
+    };
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+
+    // Timestamp = 1000 so created_at = 1000; default expiry = 86400 s.
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    client.initiate_multisig_payment(&signer1, &bytes(&env, "MS_ZERO_EXP"), &order, &signers);
+
+    // Within the window: signing should succeed
+    env.ledger().with_mut(|l| l.timestamp = 1000 + 86400 - 1);
+    client.sign_multisig_payment(&signer1, &bytes(&env, "MS_ZERO_EXP"));
+
+    // Past the window (created_at + default_expiry + 1): execute should fail
+    env.ledger().with_mut(|l| l.timestamp = 1000 + 86400 + 1);
+    assert_eq!(
+        client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_ZERO_EXP")),
+        Err(Ok(PaymentError::PaymentExpired))
+    );
+}
+
 // ── Subscription tests ────────────────────────────────────────────────────────
 
 fn make_plan(env: &Env, token: &Address) -> SubscriptionPlan {
