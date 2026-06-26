@@ -1,14 +1,15 @@
-import React from 'react';
+import './Analytics.css';
 
-export default function MetricCard({ label, value, trend, trendValue }) {
-  const isUp = trend === 'up';
+export function MetricCard({ label, value, trend, trendValue }) {
+  const up = trend === 'up';
+  const down = trend === 'down';
   return (
-    <div className="metric-card">
-      <span className="metric-label">{label}</span>
-      <span className="metric-value">{value}</span>
-      {trendValue != null && (
-        <span className={`metric-trend metric-trend--${trend}`}>
-          {isUp ? '▲' : '▼'} {trendValue}%
+    <div className="mc-card">
+      <span className="mc-label">{label}</span>
+      <span className="mc-value">{value}</span>
+      {trend && (
+        <span className={`mc-trend mc-trend--${trend}`} aria-label={`${trend} ${trendValue}`}>
+          {up ? '▲' : '▼'} {trendValue}
         </span>
       )}
     </div>
