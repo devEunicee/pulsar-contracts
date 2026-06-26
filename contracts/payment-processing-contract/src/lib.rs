@@ -264,10 +264,14 @@ impl PaymentContract {
         order_id: Bytes,
     ) -> Result<(), PaymentError> {
         helper::require_admin(&env, &admin)?;
-        if storage::get_payment(&env, &order_id).is_none() {
-            return Err(PaymentError::PaymentNotFound);
-        }
+        let record =
+            storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
+
         storage::remove_payment(&env, &order_id);
+        storage::remove_merchant_payment_id(&env, &record.merchant_address, &order_id);
+        storage::remove_payer_payment_id(&env, &record.payer, &order_id);
+        storage::remove_global_payment_id(&env, &order_id);
+        storage::mark_payment_archived(&env, &order_id);
         Ok(())
     }
 

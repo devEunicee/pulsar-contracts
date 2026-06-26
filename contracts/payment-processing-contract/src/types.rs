@@ -159,6 +159,7 @@ pub enum DataKey {
     Admin,
     Merchant(Address),
     Payment(Bytes),
+    ArchivedPayment(Bytes),
     MerchantPayments(Address),
     PayerPayments(Address),
     Refund(Bytes),

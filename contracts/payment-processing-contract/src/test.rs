@@ -455,6 +455,69 @@ fn test_multisig_insufficient_signatures_fails() {
     assert_eq!(result, Err(Ok(PaymentError::InsufficientSignatures)));
 }
 
+// ── Archive payment tests ─────────────────────────────────────────────────────
+
+#[test]
+fn test_archive_payment_record_removes_from_all_indexes() {
+    let (env, client) = setup();
+    let (admin, merchant, payer, token) = setup_paid_order(&env, &client);
+
+    // Add a second payment so indexes are non-trivial
+    let order2 = PaymentOrder {
+        order_id: bytes(&env, "ORDER_002"),
+        merchant_address: merchant.clone(),
+        payer: payer.clone(),
+        token: token.clone(),
+        amount: 500,
+        description: str(&env, "desc"),
+        expires_at: 0,
+    };
+    let pub_key = Bytes::from_array(&env, &[0u8; 32]);
+    let sig = Bytes::from_array(&env, &[0u8; 64]);
+    client.process_payment_with_signature(&payer, &order2, &sig, &pub_key);
+
+    // Archive ORDER_001
+    client.archive_payment_record(&admin, &bytes(&env, "ORDER_001"));
+
+    // Direct lookup is gone
+    let result = client.try_get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
+
+    // Merchant history no longer includes ORDER_001
+    let page = client.get_merchant_payment_history(
+        &merchant,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.get(0).unwrap().order_id, bytes(&env, "ORDER_002"));
+
+    // Payer history no longer includes ORDER_001
+    let payer_page = client.get_payer_payment_history(
+        &payer,
+        &None,
+        &10,
+        &None,
+        &SortField::Date,
+        &SortOrder::Ascending,
+    );
+    assert_eq!(payer_page.total, 1);
+    assert_eq!(payer_page.records.get(0).unwrap().order_id, bytes(&env, "ORDER_002"));
+}
+
+#[test]
+fn test_archive_nonexistent_payment_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.set_admin(&admin);
+
+    let result = client.try_archive_payment_record(&admin, &bytes(&env, "GHOST_001"));
+    assert_eq!(result, Err(Ok(PaymentError::PaymentNotFound)));
+}
+
 // ── Admin config tests ────────────────────────────────────────────────────────
 
 #[test]
