@@ -256,6 +256,18 @@ pub fn save_refund(env: &Env, refund: &RefundRecord) {
         .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
+pub fn get_subscription(env: &Env, subscription_id: &Bytes) -> Option<SubscriptionPlan> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Subscription(subscription_id.clone()))
+}
+
+pub fn save_subscription(env: &Env, subscription: &SubscriptionPlan) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Subscription(subscription.subscription_id.clone()), subscription);
+}
+
 pub fn get_all_refund_ids(env: &Env) -> Vec<Bytes> {
     let key = DataKey::AllRefunds;
     let result: Option<Vec<Bytes>> = env.storage().persistent().get(&key);

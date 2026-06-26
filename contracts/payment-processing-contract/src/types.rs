@@ -95,6 +95,27 @@ pub struct RefundRecord {
     pub dispute_reason: String,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SubscriptionStatus {
+    Active,
+    Cancelled,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionPlan {
+    pub subscription_id: Bytes,
+    pub merchant_address: Address,
+    pub payer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub interval_seconds: u64,
+    pub next_payment_at: u64,
+    pub status: SubscriptionStatus,
+    pub created_at: u64,
+}
+
 // ── Multisig ──────────────────────────────────────────────────────────────────
 
 #[contracttype]

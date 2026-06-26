@@ -42,6 +42,11 @@ pub enum PaymentError {
     MultisigAlreadyExecuted = 42,
     InsufficientSignatures = 43,
 
+    // Subscription
+    SubscriptionAlreadyExists = 60,
+    SubscriptionNotFound = 61,
+    SubscriptionAlreadyCancelled = 62,
+
     // General
     InvalidInput = 50,
     StorageError = 51,

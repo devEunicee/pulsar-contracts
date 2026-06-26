@@ -441,6 +441,41 @@ fn setup_paid_order(env: &Env, client: &PaymentContractClient) -> (Address, Addr
     (admin, merchant, payer, token)
 }
 
+fn setup_subscription(
+    env: &Env,
+    client: &PaymentContractClient,
+) -> (Address, Address, Address, Address, Bytes) {
+    let admin = Address::generate(env);
+    let merchant = Address::generate(env);
+    let payer = Address::generate(env);
+    let token = create_token(env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(env, "Store"),
+        &str(env, "desc"),
+        &str(env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(env, &token, &admin, &payer, 5000);
+
+    let subscription_id = bytes(env, "SUB_001");
+    client.create_subscription(
+        &payer,
+        &subscription_id,
+        &merchant,
+        &token,
+        &1000,
+        &3600,
+        &1000,
+        &3000,
+    );
+
+    (admin, merchant, payer, token, subscription_id)
+}
+
 #[test]
 fn test_successful_refund_flow() {
     let (env, client) = setup();
@@ -705,6 +740,103 @@ fn test_concurrent_refunds_exceeding_limit_second_rejected() {
         client.try_initiate_refund(&payer, &bytes(&env, "R_RACE_2"), &bytes(&env, "ORDER_001"), &400, &str(&env, "second")),
         Err(Ok(PaymentError::RefundAmountExceedsPayment))
     );
+}
+
+#[test]
+fn test_create_subscription_emits_event() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let subscription_id = bytes(&env, "SUB_001");
+    client.create_subscription(
+        &payer,
+        &subscription_id,
+        &merchant,
+        &token,
+        &1000,
+        &3600,
+        &1000,
+        &3000,
+    );
+
+    let events = env.events().all();
+    let last_event = events.get(events.len() - 1).unwrap();
+    let topics = last_event.1;
+    assert_eq!(topics.len(), 1);
+    let topic: String = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, str(&env, "subscription_created"));
+
+    let event_subscription_id: Bytes = last_event.2.into_val(&env);
+    assert_eq!(event_subscription_id, subscription_id);
+}
+
+#[test]
+fn test_process_subscription_payment_emits_event() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, _token, subscription_id) = setup_subscription(&env, &client);
+
+    env.ledger().set_timestamp(1000);
+    client.process_subscription_payment(&payer, &subscription_id, &bytes(&env, "ORDER_002"));
+
+    let events = env.events().all();
+    let last_event = events.get(events.len() - 1).unwrap();
+    let topics = last_event.1;
+    assert_eq!(topics.len(), 1);
+    let topic: String = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, str(&env, "subscription_charged"));
+
+    let (event_subscription_id, event_payer, event_merchant, event_amount, event_token): (
+        Bytes,
+        Address,
+        Address,
+        i128,
+        Address,
+    ) = last_event.2.into_val(&env);
+    assert_eq!(event_subscription_id, subscription_id);
+    assert_eq!(event_payer, payer);
+    assert_eq!(event_merchant, merchant);
+    assert_eq!(event_amount, 1000);
+}
+
+#[test]
+fn test_cancel_subscription_emits_event() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, _token, subscription_id) = setup_subscription(&env, &client);
+
+    client.cancel_subscription(&payer, &subscription_id);
+
+    let events = env.events().all();
+    let last_event = events.get(events.len() - 1).unwrap();
+    let topics = last_event.1;
+    assert_eq!(topics.len(), 1);
+    let topic: String = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, str(&env, "subscription_cancelled"));
+
+    let (event_subscription_id, event_payer, event_merchant, event_amount, event_token): (
+        Bytes,
+        Address,
+        Address,
+        i128,
+        Address,
+    ) = last_event.2.into_val(&env);
+    assert_eq!(event_subscription_id, subscription_id);
+    assert_eq!(event_payer, payer);
+    assert_eq!(event_merchant, merchant);
+    assert_eq!(event_amount, 1000);
 }
 
 // ── Payment history tests ─────────────────────────────────────────────────────

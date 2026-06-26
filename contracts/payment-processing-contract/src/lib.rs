@@ -299,7 +299,154 @@ impl PaymentContract {
         );
         Ok(())
     }
+    pub fn create_subscription(
+        env: Env,
+        payer: Address,
+        subscription_id: Bytes,
+        merchant_address: Address,
+        token: Address,
+        amount: i128,
+        interval_seconds: u64,
+        first_payment_at: u64,
+        deposit_amount: i128,
+    ) -> Result<(), PaymentError> {
+        payer.require_auth();
+        helper::validate_amount(amount)?;
+        helper::validate_amount(deposit_amount)?;
+        if deposit_amount < amount {
+            return Err(PaymentError::InvalidInput);
+        }
+        if interval_seconds == 0 {
+            return Err(PaymentError::InvalidInput);
+        }
+        if storage::get_subscription(&env, &subscription_id).is_some() {
+            return Err(PaymentError::SubscriptionAlreadyExists);
+        }
 
+        let merchant = storage::get_merchant(&env, &merchant_address)
+            .ok_or(PaymentError::MerchantNotFound)?;
+        if !merchant.active {
+            return Err(PaymentError::MerchantInactive);
+        }
+
+        let contract_address = env.current_contract_address();
+        let token_client = token::Client::new(&env, &token);
+        token_client.transfer(&payer, &contract_address, &deposit_amount);
+
+        let subscription = SubscriptionPlan {
+            subscription_id: subscription_id.clone(),
+            merchant_address: merchant_address.clone(),
+            payer: payer.clone(),
+            token: token.clone(),
+            amount,
+            interval_seconds,
+            next_payment_at: first_payment_at,
+            status: SubscriptionStatus::Active,
+            created_at: env.ledger().timestamp(),
+        };
+        storage::save_subscription(&env, &subscription);
+        env.events().publish(
+            (String::from_str(&env, "subscription_created"),),
+            subscription_id.clone(),
+        );
+        Ok(())
+    }
+
+    pub fn cancel_subscription(
+        env: Env,
+        caller: Address,
+        subscription_id: Bytes,
+    ) -> Result<(), PaymentError> {
+        caller.require_auth();
+        let mut subscription = storage::get_subscription(&env, &subscription_id)
+            .ok_or(PaymentError::SubscriptionNotFound)?;
+        let admin = storage::get_admin(&env);
+        if caller != subscription.payer
+            && caller != subscription.merchant_address
+            && admin.as_ref() != Some(&caller)
+        {
+            return Err(PaymentError::Unauthorized);
+        }
+        if subscription.status == SubscriptionStatus::Cancelled {
+            return Err(PaymentError::SubscriptionAlreadyCancelled);
+        }
+        subscription.status = SubscriptionStatus::Cancelled;
+        storage::save_subscription(&env, &subscription);
+        env.events().publish(
+            (String::from_str(&env, "subscription_cancelled"),),
+            (
+                subscription_id,
+                subscription.payer,
+                subscription.merchant_address,
+                subscription.amount,
+                subscription.token,
+            ),
+        );
+        Ok(())
+    }
+
+    pub fn process_subscription_payment(
+        env: Env,
+        caller: Address,
+        subscription_id: Bytes,
+        order_id: Bytes,
+    ) -> Result<(), PaymentError> {
+        caller.require_auth();
+        let mut subscription = storage::get_subscription(&env, &subscription_id)
+            .ok_or(PaymentError::SubscriptionNotFound)?;
+        if subscription.status != SubscriptionStatus::Active {
+            return Err(PaymentError::SubscriptionAlreadyCancelled);
+        }
+        let now = env.ledger().timestamp();
+        if now < subscription.next_payment_at {
+            return Err(PaymentError::InvalidInput);
+        }
+        if storage::get_payment(&env, &order_id).is_some() {
+            return Err(PaymentError::PaymentAlreadyExists);
+        }
+
+        let contract_address = env.current_contract_address();
+        let token_client = token::Client::new(&env, &subscription.token);
+        token_client.transfer(
+            &contract_address,
+            &subscription.merchant_address,
+            &subscription.amount,
+        );
+
+        let record = PaymentRecord {
+            order_id: order_id.clone(),
+            merchant_address: subscription.merchant_address.clone(),
+            payer: subscription.payer.clone(),
+            token: subscription.token.clone(),
+            amount: subscription.amount,
+            refunded_amount: 0,
+            status: PaymentStatus::Completed,
+            paid_at: now,
+        };
+        storage::save_payment(&env, &record);
+        storage::push_merchant_payment_id(&env, &subscription.merchant_address, &order_id);
+        storage::push_payer_payment_id(&env, &subscription.payer, &order_id);
+        storage::push_global_payment_id(&env, &order_id);
+        storage::increment_payment_stats(&env, subscription.amount);
+
+        subscription.next_payment_at = subscription
+            .next_payment_at
+            .checked_add(subscription.interval_seconds)
+            .ok_or(PaymentError::ArithmeticError)?;
+        storage::save_subscription(&env, &subscription);
+
+        env.events().publish(
+            (String::from_str(&env, "subscription_charged"),),
+            (
+                subscription_id,
+                subscription.payer,
+                subscription.merchant_address,
+                subscription.amount,
+                subscription.token,
+            ),
+        );
+        Ok(())
+    }
     // ── Payment queries ───────────────────────────────────────────────────────
 
     /// Retrieve a single payment record by its order ID.
