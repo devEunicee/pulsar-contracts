@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+mod data_quality;
 mod error;
 mod helper;
 mod storage;
@@ -23,6 +24,7 @@ use types::{
     DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
     PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
 };
+use data_quality::QualityReport;
 
 #[contract]
 pub struct PaymentContract;
@@ -833,6 +835,20 @@ impl PaymentContract {
             next_cursor,
             total,
         })
+    }
+
+    // ── Data quality ──────────────────────────────────────────────────────────
+
+    /// Run all on-chain data quality checks. Admin only.
+    ///
+    /// Returns a `QualityReport` with referential integrity, amount
+    /// consistency, timestamp anomaly, and merchant integrity findings.
+    pub fn run_data_quality_checks(
+        env: Env,
+        admin: Address,
+    ) -> Result<QualityReport, PaymentError> {
+        helper::require_admin(&env, &admin)?;
+        Ok(data_quality::run_checks(&env))
     }
 }
 ending => v1.cmp(&v2),
