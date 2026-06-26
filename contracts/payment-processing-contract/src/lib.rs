@@ -31,6 +31,7 @@ use types::{
     PaymentFilter, PaymentOrder, PaymentPage, PaymentRecord, PaymentStatus, RefundRecord,
     RefundStatus, SortField, SortOrder,
 };
+use data_quality::QualityReport;
 
 #[contract]
 pub struct PaymentContract;
