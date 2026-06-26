@@ -364,3 +364,67 @@ pub fn increment_refund_stats(env: &Env, amount: i128) -> Result<(), PaymentErro
     save_global_stats(env, &stats);
     Ok(())
 }
+
+// ── Dispute ───────────────────────────────────────────────────────────────────
+
+pub fn get_dispute(env: &Env, dispute_id: &Bytes) -> Option<crate::types::DisputeRecord> {
+    let key = DataKey::Dispute(dispute_id.clone());
+    let result = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
+}
+
+pub fn save_dispute(env: &Env, dispute: &crate::types::DisputeRecord) {
+    let key = DataKey::Dispute(dispute.dispute_id.clone());
+    env.storage().persistent().set(&key, dispute);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+pub fn get_all_dispute_ids(env: &Env) -> Vec<Bytes> {
+    let key = DataKey::AllDisputes;
+    let result: Option<Vec<Bytes>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result.unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn push_dispute_id(env: &Env, dispute_id: &Bytes) {
+    let mut ids = get_all_dispute_ids(env);
+    ids.push_back(dispute_id.clone());
+    let key = DataKey::AllDisputes;
+    env.storage().persistent().set(&key, &ids);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+/// Return dispute IDs linked to a payment order.
+pub fn get_payment_dispute_ids(env: &Env, order_id: &Bytes) -> Vec<Bytes> {
+    let key = DataKey::PaymentDisputes(order_id.clone());
+    let result: Option<Vec<Bytes>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result.unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn push_payment_dispute_id(env: &Env, order_id: &Bytes, dispute_id: &Bytes) {
+    let mut ids = get_payment_dispute_ids(env, order_id);
+    ids.push_back(dispute_id.clone());
+    let key = DataKey::PaymentDisputes(order_id.clone());
+    env.storage().persistent().set(&key, &ids);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}

@@ -20,8 +20,9 @@ use soroban_sdk::{
 use error::PaymentError;
 use storage::REFUND_WINDOW;
 use types::{
-    DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
-    PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
+    DataKey, DisputeReason, DisputeRecord, DisputeStatus, GlobalStats, Merchant, MerchantCategory,
+    MultisigPayment, PaymentFilter, PaymentOrder, PaymentPage, PaymentRecord, PaymentStatus,
+    RefundRecord, RefundStatus, SortField, SortOrder,
 };
 
 #[contract]
@@ -834,28 +835,186 @@ impl PaymentContract {
             total,
         })
     }
-}
-ending => v1.cmp(&v2),
-                SortOrder::Descending => v2.cmp(&v1),
-            }
-        });
 
-        let next_cursor = if records.len() > cap {
-            records.get(cap - 1).map(|r| r.order_id.clone())
-        } else {
-            None
-        };
+    // ── Dispute Management ────────────────────────────────────────────────────
 
-        // Truncate to cap and convert back to Soroban Vec
-        let mut page: Vec<PaymentRecord> = Vec::new(env);
-        for i in 0..(records.len().min(cap)) {
-            page.push_back(records[i].clone());
+    /// Open a new dispute against a completed payment.
+    /// Callable by the payer or the admin.
+    pub fn open_dispute(
+        env: Env,
+        dispute_id: Bytes,
+        order_id: Bytes,
+        raised_by: Address,
+        reason: DisputeReason,
+        description: String,
+        evidence: Option<Bytes>,
+    ) -> Result<(), PaymentError> {
+        raised_by.require_auth();
+
+        if dispute_id.len() == 0 || dispute_id.len() > 64 {
+            return Err(PaymentError::InvalidInput);
+        }
+        if storage::get_dispute(&env, &dispute_id).is_some() {
+            return Err(PaymentError::DisputeAlreadyExists);
         }
 
-        Ok(PaymentPage {
-            records: page,
-            next_cursor,
-            total,
-        })
+        // Payment must exist
+        storage::get_payment(&env, &order_id).ok_or(PaymentError::PaymentNotFound)?;
+
+        let dispute = DisputeRecord {
+            dispute_id: dispute_id.clone(),
+            order_id: order_id.clone(),
+            raised_by,
+            reason,
+            description,
+            evidence,
+            status: DisputeStatus::Open,
+            created_at: env.ledger().timestamp(),
+            resolved_at: None,
+            resolution_notes: None,
+            appeal_reason: None,
+        };
+
+        storage::save_dispute(&env, &dispute);
+        storage::push_dispute_id(&env, &dispute_id);
+        storage::push_payment_dispute_id(&env, &order_id, &dispute_id);
+
+        env.events().publish(
+            (String::from_str(&env, "dispute_opened"),),
+            (dispute_id, order_id),
+        );
+        Ok(())
+    }
+
+    /// Move a dispute into UnderReview state. Admin only.
+    pub fn review_dispute(
+        env: Env,
+        admin: Address,
+        dispute_id: Bytes,
+    ) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+
+        let mut dispute =
+            storage::get_dispute(&env, &dispute_id).ok_or(PaymentError::DisputeNotFound)?;
+
+        if dispute.status != DisputeStatus::Open && dispute.status != DisputeStatus::Appealed {
+            return Err(PaymentError::DisputeNotOpen);
+        }
+
+        dispute.status = DisputeStatus::UnderReview;
+        storage::save_dispute(&env, &dispute);
+
+        env.events().publish(
+            (String::from_str(&env, "dispute_under_review"),),
+            dispute_id,
+        );
+        Ok(())
+    }
+
+    /// Resolve a dispute as Upheld or Overturned. Admin only.
+    /// When upheld, call `initiate_refund` to trigger the actual fund transfer.
+    pub fn resolve_dispute(
+        env: Env,
+        admin: Address,
+        dispute_id: Bytes,
+        upheld: bool,
+        resolution_notes: Option<String>,
+    ) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+
+        let mut dispute =
+            storage::get_dispute(&env, &dispute_id).ok_or(PaymentError::DisputeNotFound)?;
+
+        if dispute.status != DisputeStatus::UnderReview {
+            return Err(PaymentError::DisputeNotUnderReview);
+        }
+
+        dispute.status = if upheld {
+            DisputeStatus::Upheld
+        } else {
+            DisputeStatus::Overturned
+        };
+        dispute.resolved_at = Some(env.ledger().timestamp());
+        dispute.resolution_notes = resolution_notes;
+
+        storage::save_dispute(&env, &dispute);
+
+        let event_name = if upheld {
+            String::from_str(&env, "dispute_upheld")
+        } else {
+            String::from_str(&env, "dispute_overturned")
+        };
+        env.events().publish((event_name,), dispute_id);
+        Ok(())
+    }
+
+    /// Submit an appeal against an Upheld or Overturned resolution.
+    /// Callable by the original dispute raiser.
+    pub fn appeal_dispute(
+        env: Env,
+        dispute_id: Bytes,
+        appellant: Address,
+        appeal_reason: String,
+    ) -> Result<(), PaymentError> {
+        appellant.require_auth();
+
+        let mut dispute =
+            storage::get_dispute(&env, &dispute_id).ok_or(PaymentError::DisputeNotFound)?;
+
+        if dispute.raised_by != appellant {
+            return Err(PaymentError::Unauthorized);
+        }
+
+        if dispute.status != DisputeStatus::Upheld && dispute.status != DisputeStatus::Overturned {
+            return Err(PaymentError::AppealNotAllowed);
+        }
+
+        dispute.status = DisputeStatus::Appealed;
+        dispute.appeal_reason = Some(appeal_reason);
+        storage::save_dispute(&env, &dispute);
+
+        env.events()
+            .publish((String::from_str(&env, "dispute_appealed"),), dispute_id);
+        Ok(())
+    }
+
+    /// Close a dispute with no further action. Admin only.
+    pub fn close_dispute(
+        env: Env,
+        admin: Address,
+        dispute_id: Bytes,
+    ) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+
+        let mut dispute =
+            storage::get_dispute(&env, &dispute_id).ok_or(PaymentError::DisputeNotFound)?;
+
+        if dispute.status == DisputeStatus::Closed {
+            return Err(PaymentError::DisputeAlreadyClosed);
+        }
+
+        dispute.status = DisputeStatus::Closed;
+        dispute.resolved_at = Some(env.ledger().timestamp());
+        storage::save_dispute(&env, &dispute);
+
+        env.events()
+            .publish((String::from_str(&env, "dispute_closed"),), dispute_id);
+        Ok(())
+    }
+
+    /// Get a single dispute record by ID.
+    pub fn get_dispute(env: Env, dispute_id: Bytes) -> Result<DisputeRecord, PaymentError> {
+        storage::get_dispute(&env, &dispute_id).ok_or(PaymentError::DisputeNotFound)
+    }
+
+    /// Get all dispute IDs linked to a payment order.
+    pub fn get_payment_disputes(env: Env, order_id: Bytes) -> Vec<Bytes> {
+        storage::get_payment_dispute_ids(&env, &order_id)
+    }
+
+    /// Get all dispute IDs in the system (admin review queue). Admin only.
+    pub fn get_all_disputes(env: Env, admin: Address) -> Result<Vec<Bytes>, PaymentError> {
+        helper::require_admin(&env, &admin)?;
+        Ok(storage::get_all_dispute_ids(&env))
     }
 }

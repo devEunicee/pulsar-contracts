@@ -163,6 +163,54 @@ pub struct AdminConfig {
     pub threshold: u32,
 }
 
+// ── Dispute ───────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeStatus {
+    /// Dispute filed, awaiting investigation
+    Open,
+    /// Under admin/merchant review
+    UnderReview,
+    /// Dispute upheld — refund triggered
+    Upheld,
+    /// Dispute overturned — payment stands
+    Overturned,
+    /// Appeal submitted against a resolution
+    Appealed,
+    /// Final closed state (no further action)
+    Closed,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeReason {
+    Fraud,
+    ItemNotReceived,
+    ItemNotAsDescribed,
+    DuplicateCharge,
+    Unauthorized,
+    Other,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeRecord {
+    pub dispute_id: Bytes,
+    pub order_id: Bytes,
+    pub raised_by: Address,
+    pub reason: DisputeReason,
+    pub description: String,
+    /// On-chain evidence reference (e.g. IPFS hash or transaction ID encoded as bytes)
+    pub evidence: Option<Bytes>,
+    pub status: DisputeStatus,
+    pub created_at: u64,
+    pub resolved_at: Option<u64>,
+    pub resolution_notes: Option<String>,
+    /// Appeal reason if status == Appealed
+    pub appeal_reason: Option<String>,
+}
+
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -187,4 +235,8 @@ pub enum DataKey {
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
+    // Dispute keys
+    Dispute(Bytes),
+    AllDisputes,
+    PaymentDisputes(Bytes),
 }

@@ -39,4 +39,12 @@ pub enum PaymentError {
     InvalidInput = 50,
     StorageError = 51,
     ArithmeticError = 52,
+
+    // Dispute
+    DisputeNotFound = 60,
+    DisputeAlreadyExists = 61,
+    DisputeNotOpen = 62,
+    DisputeNotUnderReview = 63,
+    DisputeAlreadyClosed = 64,
+    AppealNotAllowed = 65,
 }
