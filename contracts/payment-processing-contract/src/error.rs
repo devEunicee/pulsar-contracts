@@ -39,4 +39,9 @@ pub enum PaymentError {
     InvalidInput = 50,
     StorageError = 51,
     ArithmeticError = 52,
+
+    // Notification
+    NotificationNotFound = 70,
+    NotificationAlreadyExists = 71,
+    RateLimitExceeded = 72,
 }

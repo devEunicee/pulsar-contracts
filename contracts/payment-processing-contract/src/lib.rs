@@ -20,8 +20,10 @@ use soroban_sdk::{
 use error::PaymentError;
 use storage::REFUND_WINDOW;
 use types::{
-    DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
-    PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
+    DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, NotificationChannel,
+    NotificationEvent, NotificationPreferences, NotificationRecord, DeliveryStatus, PaymentFilter,
+    PaymentOrder, PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField,
+    SortOrder,
 };
 
 #[contract]
@@ -834,28 +836,201 @@ impl PaymentContract {
             total,
         })
     }
-}
-ending => v1.cmp(&v2),
-                SortOrder::Descending => v2.cmp(&v1),
-            }
-        });
 
-        let next_cursor = if records.len() > cap {
-            records.get(cap - 1).map(|r| r.order_id.clone())
-        } else {
-            None
-        };
+    // ── Notification Service ──────────────────────────────────────────────────
 
-        // Truncate to cap and convert back to Soroban Vec
-        let mut page: Vec<PaymentRecord> = Vec::new(env);
-        for i in 0..(records.len().min(cap)) {
-            page.push_back(records[i].clone());
+    /// Queue a notification for a recipient on a given channel.
+    /// Rate-limited to NOTIFICATION_RATE_LIMIT per hour per recipient.
+    /// The actual delivery (email/SMS/push) is handled by an off-chain service
+    /// that polls `get_pending_notifications`.
+    pub fn send_notification(
+        env: Env,
+        notification_id: Bytes,
+        recipient: Address,
+        channel: NotificationChannel,
+        event: NotificationEvent,
+        template_key: String,
+        payload: Bytes,
+    ) -> Result<(), PaymentError> {
+        if notification_id.len() == 0 || notification_id.len() > 64 {
+            return Err(PaymentError::InvalidInput);
+        }
+        if storage::get_notification(&env, &notification_id).is_some() {
+            return Err(PaymentError::NotificationAlreadyExists);
         }
 
-        Ok(PaymentPage {
-            records: page,
-            next_cursor,
-            total,
-        })
+        // Enforce per-recipient rate limit
+        storage::check_and_increment_rate(&env, &recipient)?;
+
+        // Check recipient preferences: skip if channel disabled or event disabled
+        let status = if let Some(prefs) = storage::get_notification_prefs(&env, &recipient) {
+            let channel_ok = prefs.enabled_channels.iter().any(|c| c == channel);
+            let event_ok = !prefs.disabled_events.iter().any(|e| e == event);
+
+            // DND check (simple hour-based window using ledger timestamp)
+            let dnd_suppressed = if let (Some(start), Some(end)) =
+                (prefs.dnd_start_hour, prefs.dnd_end_hour)
+            {
+                let hour = (env.ledger().timestamp() % 86_400) / 3_600;
+                if start <= end {
+                    hour >= start && hour < end
+                } else {
+                    // Wraps midnight
+                    hour >= start || hour < end
+                }
+            } else {
+                false
+            };
+
+            if !channel_ok || !event_ok || dnd_suppressed {
+                DeliveryStatus::Skipped
+            } else {
+                DeliveryStatus::Pending
+            }
+        } else {
+            DeliveryStatus::Pending
+        };
+
+        let notif = NotificationRecord {
+            notification_id: notification_id.clone(),
+            recipient: recipient.clone(),
+            channel,
+            event,
+            template_key,
+            payload,
+            status,
+            created_at: env.ledger().timestamp(),
+            delivered_at: None,
+            attempts: 0,
+        };
+
+        storage::save_notification(&env, &notif);
+        storage::push_recipient_notification_id(&env, &recipient, &notification_id);
+
+        env.events().publish(
+            (String::from_str(&env, "notification_queued"),),
+            (notification_id, recipient),
+        );
+        Ok(())
+    }
+
+    /// Mark a notification as delivered or failed (called by off-chain service).
+    /// Only admin can update delivery status.
+    pub fn update_notification_status(
+        env: Env,
+        admin: Address,
+        notification_id: Bytes,
+        delivered: bool,
+    ) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+
+        let mut notif =
+            storage::get_notification(&env, &notification_id)
+                .ok_or(PaymentError::NotificationNotFound)?;
+
+        notif.attempts += 1;
+        notif.status = if delivered {
+            notif.delivered_at = Some(env.ledger().timestamp());
+            DeliveryStatus::Delivered
+        } else {
+            DeliveryStatus::Failed
+        };
+
+        storage::save_notification(&env, &notif);
+
+        env.events().publish(
+            (String::from_str(&env, "notification_status_updated"),),
+            (notification_id, delivered),
+        );
+        Ok(())
+    }
+
+    /// Retry a previously Failed notification (resets status to Pending).
+    /// Admin only.
+    pub fn retry_notification(
+        env: Env,
+        admin: Address,
+        notification_id: Bytes,
+    ) -> Result<(), PaymentError> {
+        helper::require_admin(&env, &admin)?;
+
+        let mut notif =
+            storage::get_notification(&env, &notification_id)
+                .ok_or(PaymentError::NotificationNotFound)?;
+
+        if notif.status != DeliveryStatus::Failed {
+            return Err(PaymentError::InvalidInput);
+        }
+
+        notif.status = DeliveryStatus::Pending;
+        storage::save_notification(&env, &notif);
+
+        env.events().publish(
+            (String::from_str(&env, "notification_retried"),),
+            notification_id,
+        );
+        Ok(())
+    }
+
+    /// Set notification preferences for the calling recipient.
+    pub fn set_notification_preferences(
+        env: Env,
+        recipient: Address,
+        enabled_channels: Vec<NotificationChannel>,
+        disabled_events: Vec<NotificationEvent>,
+        dnd_start_hour: Option<u32>,
+        dnd_end_hour: Option<u32>,
+    ) -> Result<(), PaymentError> {
+        recipient.require_auth();
+
+        // Validate DND hours (0-23)
+        if let Some(h) = dnd_start_hour {
+            if h > 23 {
+                return Err(PaymentError::InvalidInput);
+            }
+        }
+        if let Some(h) = dnd_end_hour {
+            if h > 23 {
+                return Err(PaymentError::InvalidInput);
+            }
+        }
+
+        let prefs = NotificationPreferences {
+            recipient: recipient.clone(),
+            enabled_channels,
+            disabled_events,
+            dnd_start_hour,
+            dnd_end_hour,
+        };
+
+        storage::save_notification_prefs(&env, &prefs);
+
+        env.events().publish(
+            (String::from_str(&env, "notification_prefs_updated"),),
+            recipient,
+        );
+        Ok(())
+    }
+
+    /// Get notification preferences for a recipient.
+    pub fn get_notification_preferences(
+        env: Env,
+        recipient: Address,
+    ) -> Option<NotificationPreferences> {
+        storage::get_notification_prefs(&env, &recipient)
+    }
+
+    /// Get a single notification record by ID.
+    pub fn get_notification(
+        env: Env,
+        notification_id: Bytes,
+    ) -> Result<NotificationRecord, PaymentError> {
+        storage::get_notification(&env, &notification_id)
+            .ok_or(PaymentError::NotificationNotFound)
+    }
+
+    /// Get all notification IDs for a recipient (for history tracking).
+    pub fn get_recipient_notifications(env: Env, recipient: Address) -> Vec<Bytes> {
+        storage::get_recipient_notification_ids(&env, &recipient)
     }
 }

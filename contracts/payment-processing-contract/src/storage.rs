@@ -364,3 +364,105 @@ pub fn increment_refund_stats(env: &Env, amount: i128) -> Result<(), PaymentErro
     save_global_stats(env, &stats);
     Ok(())
 }
+
+// ── Notification ──────────────────────────────────────────────────────────────
+
+/// Max notifications per recipient per rate window (1 hour = 3600 seconds).
+pub const NOTIFICATION_RATE_LIMIT: u32 = 20;
+pub const NOTIFICATION_RATE_WINDOW: u64 = 3_600;
+
+pub fn get_notification(
+    env: &Env,
+    notification_id: &Bytes,
+) -> Option<crate::types::NotificationRecord> {
+    let key = DataKey::Notification(notification_id.clone());
+    let result = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
+}
+
+pub fn save_notification(env: &Env, notif: &crate::types::NotificationRecord) {
+    let key = DataKey::Notification(notif.notification_id.clone());
+    env.storage().persistent().set(&key, notif);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+pub fn get_recipient_notification_ids(env: &Env, recipient: &Address) -> Vec<Bytes> {
+    let key = DataKey::RecipientNotifications(recipient.clone());
+    let result: Option<Vec<Bytes>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result.unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn push_recipient_notification_id(env: &Env, recipient: &Address, notification_id: &Bytes) {
+    let mut ids = get_recipient_notification_ids(env, recipient);
+    ids.push_back(notification_id.clone());
+    let key = DataKey::RecipientNotifications(recipient.clone());
+    env.storage().persistent().set(&key, &ids);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+pub fn get_notification_prefs(
+    env: &Env,
+    recipient: &Address,
+) -> Option<crate::types::NotificationPreferences> {
+    let key = DataKey::NotificationPrefs(recipient.clone());
+    let result = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+    }
+    result
+}
+
+pub fn save_notification_prefs(
+    env: &Env,
+    prefs: &crate::types::NotificationPreferences,
+) {
+    let key = DataKey::NotificationPrefs(prefs.recipient.clone());
+    env.storage().persistent().set(&key, prefs);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+/// Check rate limit and increment counter. Returns Err if limit exceeded.
+pub fn check_and_increment_rate(env: &Env, recipient: &Address) -> Result<(), PaymentError> {
+    let now = env.ledger().timestamp();
+    let window_key = DataKey::NotificationRateWindowStart(recipient.clone());
+    let count_key = DataKey::NotificationRateCount(recipient.clone());
+
+    let window_start: u64 = env
+        .storage()
+        .temporary()
+        .get(&window_key)
+        .unwrap_or(now);
+
+    let count: u32 = if now - window_start < NOTIFICATION_RATE_WINDOW {
+        env.storage().temporary().get(&count_key).unwrap_or(0)
+    } else {
+        // New window
+        env.storage().temporary().set(&window_key, &now);
+        0
+    };
+
+    if count >= NOTIFICATION_RATE_LIMIT {
+        return Err(PaymentError::RateLimitExceeded);
+    }
+
+    env.storage().temporary().set(&count_key, &(count + 1));
+    Ok(())
+}

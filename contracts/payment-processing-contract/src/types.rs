@@ -163,6 +163,75 @@ pub struct AdminConfig {
     pub threshold: u32,
 }
 
+// ── Notification ──────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NotificationChannel {
+    Email,
+    Sms,
+    Push,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NotificationEvent {
+    PaymentReceived,
+    PaymentFailed,
+    RefundInitiated,
+    RefundApproved,
+    RefundRejected,
+    RefundExecuted,
+    DisputeOpened,
+    DisputeResolved,
+    MultisigReady,
+    AdminAlert,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DeliveryStatus {
+    Pending,
+    Delivered,
+    Failed,
+    /// Suppressed by DND or rate-limit
+    Skipped,
+}
+
+/// A single queued notification record.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NotificationRecord {
+    pub notification_id: Bytes,
+    pub recipient: Address,
+    pub channel: NotificationChannel,
+    pub event: NotificationEvent,
+    /// Template key for off-chain renderer, e.g. "payment_received_v1"
+    pub template_key: String,
+    /// Arbitrary payload bytes (JSON encoded by caller)
+    pub payload: Bytes,
+    pub status: DeliveryStatus,
+    pub created_at: u64,
+    pub delivered_at: Option<u64>,
+    /// Number of delivery attempts
+    pub attempts: u32,
+}
+
+/// Per-recipient notification preferences.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NotificationPreferences {
+    pub recipient: Address,
+    /// Channels the recipient has opted into
+    pub enabled_channels: Vec<NotificationChannel>,
+    /// Events the recipient has opted out of (empty = all enabled)
+    pub disabled_events: Vec<NotificationEvent>,
+    /// DND window: UTC hour start (0-23)
+    pub dnd_start_hour: Option<u32>,
+    /// DND window: UTC hour end (0-23)
+    pub dnd_end_hour: Option<u32>,
+}
+
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -187,4 +256,12 @@ pub enum DataKey {
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
+    // Notification keys
+    Notification(Bytes),
+    RecipientNotifications(Address),
+    NotificationPrefs(Address),
+    /// Rolling count of notifications sent to a recipient within the rate window
+    NotificationRateCount(Address),
+    /// Timestamp when the current rate window started for a recipient
+    NotificationRateWindowStart(Address),
 }
