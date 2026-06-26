@@ -1,0 +1,37 @@
+name: Database Backup
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 02:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    name: Daily database backup
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+      BACKUP_RETENTION_DAYS: '30'
+      BACKUP_ROOT: './db-backups'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+          unzip -qq /tmp/awscliv2.zip -d /tmp
+          sudo /tmp/aws/install
+
+      - name: Run backup script
+        run: scripts/db-backup.sh
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backup
+          path: db-backups/
