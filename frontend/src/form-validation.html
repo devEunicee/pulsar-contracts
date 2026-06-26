@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Form Validation Demo</title>
+  <style>
+    .invalid { border-color: #e02424; }
+    .valid { border-color: #0b8a0b; }
+    .error { color: #e02424; font-size: 0.9em; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h2>Merchant Registration (Demo)</h2>
+  <form id="form">
+    <div>
+      <label>Name<br /><input id="name" /></label>
+      <div id="nameErr" class="error hidden">Name is required (max 64 chars)</div>
+    </div>
+    <div>
+      <label>Contact Email<br /><input id="contact" /></label>
+      <div id="contactErr" class="error hidden">Contact email is required</div>
+    </div>
+    <div>
+      <label>Description<br /><textarea id="desc"></textarea></label>
+      <div id="descErr" class="error hidden">Description is required (max 256 chars)</div>
+    </div>
+    <button id="submit" disabled>Submit</button>
+  </form>
+
+  <script>
+    const name = document.getElementById('name');
+    const contact = document.getElementById('contact');
+    const desc = document.getElementById('desc');
+    const submit = document.getElementById('submit');
+
+    function validateField(el, errId, fn) {
+      const err = document.getElementById(errId);
+      const ok = fn(el.value);
+      el.classList.toggle('invalid', !ok);
+      el.classList.toggle('valid', ok);
+      err.classList.toggle('hidden', ok);
+      return ok;
+    }
+
+    function validateAll() {
+      const n = validateField(name, 'nameErr', v => v.trim().length > 0 && v.trim().length <= 64);
+      const c = validateField(contact, 'contactErr', v => /\S+@\S+\.\S+/.test(v));
+      const d = validateField(desc, 'descErr', v => v.trim().length > 0 && v.trim().length <= 256);
+      submit.disabled = !(n && c && d);
+    }
+
+    [name, contact, desc].forEach(el => {
+      el.addEventListener('input', validateAll);
+      el.addEventListener('blur', validateAll);
+    });
+
+    document.getElementById('form').addEventListener('submit', e => {
+      e.preventDefault();
+      alert('Form submitted (demo)');
+    });
+
+    validateAll();
+  </script>
+</body>
+</html>
