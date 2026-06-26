@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+mod audit;
 mod error;
 mod helper;
 mod storage;
@@ -23,6 +24,7 @@ use types::{
     DataKey, GlobalStats, Merchant, MerchantCategory, MultisigPayment, PaymentFilter, PaymentOrder,
     PaymentPage, PaymentRecord, PaymentStatus, RefundRecord, RefundStatus, SortField, SortOrder,
 };
+use audit::{AuditEntry, AuditAction};
 
 #[contract]
 pub struct PaymentContract;
@@ -833,6 +835,28 @@ impl PaymentContract {
             next_cursor,
             total,
         })
+    }
+
+    // ── Audit log ─────────────────────────────────────────────────────────────
+
+    /// Return a page of audit log entries (most-recent-first).
+    /// Admin only.
+    ///
+    /// `from_index` — 1-based start index; pass 0 to start from the latest.
+    /// `limit` — max entries to return (capped at 50).
+    pub fn get_audit_log(
+        env: Env,
+        admin: Address,
+        from_index: u64,
+        limit: u32,
+    ) -> Result<Vec<AuditEntry>, PaymentError> {
+        helper::require_admin(&env, &admin)?;
+        Ok(audit::get_entries(&env, from_index, limit))
+    }
+
+    /// Return the total number of audit log entries.
+    pub fn get_audit_count(env: Env) -> u64 {
+        audit::get_audit_count(&env)
     }
 }
 ending => v1.cmp(&v2),

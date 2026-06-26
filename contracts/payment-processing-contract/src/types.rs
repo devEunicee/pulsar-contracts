@@ -187,4 +187,7 @@ pub enum DataKey {
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
+    // Audit log
+    AuditCount,
+    AuditEntry(u64),
 }
