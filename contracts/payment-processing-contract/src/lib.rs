@@ -1212,7 +1212,13 @@ impl PaymentContract {
         if ms.executed {
             return Err(PaymentError::MultisigAlreadyExecuted);
         }
-        if env.ledger().timestamp() > ms.expires_at {
+        // When expires_at == 0 apply the configured default expiry from creation time.
+        let effective_expiry = if ms.expires_at == 0 {
+            ms.created_at + storage::get_default_multisig_expiry(&env)
+        } else {
+            ms.expires_at
+        };
+        if env.ledger().timestamp() > effective_expiry {
             return Err(PaymentError::PaymentExpired);
         }
         if !ms.required_signers.contains(&signer) {
@@ -1258,7 +1264,13 @@ impl PaymentContract {
             return Err(PaymentError::MultisigAlreadyExecuted);
         }
         let now = env.ledger().timestamp();
-        if now > ms.expires_at {
+        // When expires_at == 0 apply the configured default expiry from creation time.
+        let effective_expiry = if ms.expires_at == 0 {
+            ms.created_at + storage::get_default_multisig_expiry(&env)
+        } else {
+            ms.expires_at
+        };
+        if now > effective_expiry {
             return Err(PaymentError::PaymentExpired);
         }
         if ms.signatures.len() < ms.required_signers.len() {
