@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Keyboard Shortcuts Demo</title>
+  <style>
+    .modal { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#fff; padding:16px; border:1px solid #ccc; display:none; }
+    .modal.show { display:block; }
+  </style>
+</head>
+<body>
+  <h2>Keyboard Shortcuts Demo</h2>
+  <p>Try: <strong>Ctrl+N</strong> create payment, <strong>Ctrl+F</strong> open filters, <strong>Ctrl+/?</strong> help</p>
+  <div id="status" aria-live="polite"></div>
+
+  <div id="help" class="modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+    <h3>Shortcuts</h3>
+    <ul>
+      <li><kbd>Ctrl+N</kbd> — Create payment</li>
+      <li><kbd>Ctrl+F</kbd> — Open filters</li>
+      <li><kbd>Ctrl+/?</kbd> — Toggle this help</li>
+    </ul>
+    <button id="closeHelp">Close</button>
+  </div>
+
+  <label><input type="checkbox" id="enableShortcuts" checked> Enable shortcuts</label>
+
+  <script>
+    const help = document.getElementById('help');
+    const status = document.getElementById('status');
+    const enabled = () => document.getElementById('enableShortcuts').checked;
+
+    function handleAction(a){ status.textContent = 'Action: '+a; }
+
+    window.addEventListener('keydown', (e)=>{
+      if(!enabled()) return;
+      if((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='n'){
+        e.preventDefault(); handleAction('create_payment');
+      }
+      if((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='f'){
+        e.preventDefault(); handleAction('open_filters');
+      }
+      if((e.ctrlKey || e.metaKey) && e.key==='?'){
+        e.preventDefault(); help.classList.toggle('show');
+      }
+    });
+
+    document.getElementById('closeHelp').addEventListener('click', ()=> help.classList.remove('show'));
+  </script>
+</body>
+</html>
