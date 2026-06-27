@@ -1,0 +1,160 @@
+.phf {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.phf__fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.phf__legend {
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.phf__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.phf__row--sort {
+  gap: 1rem;
+}
+
+.phf__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.phf__field--combobox {
+  position: relative;
+}
+
+.phf__label {
+  font-weight: 500;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.phf__input,
+.phf__select {
+  padding: 0.375rem 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  color: #111827;
+  background: #fff;
+  min-width: 0;
+}
+
+.phf__input:focus,
+.phf__select:focus {
+  outline: 2px solid #6366f1;
+  outline-offset: 1px;
+  border-color: #6366f1;
+}
+
+.phf__input--number {
+  width: 7rem;
+}
+
+/* Combobox */
+.phf__combobox-wrap {
+  position: relative;
+}
+
+.phf__combobox-wrap .phf__input {
+  width: 100%;
+}
+
+.phf__suggestions {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.phf__suggestion {
+  padding: 0.375rem 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phf__suggestion:hover,
+.phf__suggestion--active {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+/* Clear button */
+.phf__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.phf__clear-btn {
+  padding: 0.375rem 0.875rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  background: #fff;
+  color: #374151;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.phf__clear-btn:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.phf__clear-btn:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+.phf__clear-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .phf__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .phf__input--number {
+    width: 100%;
+  }
+
+  .phf__row--sort {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}

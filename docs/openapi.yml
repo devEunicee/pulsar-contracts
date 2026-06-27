@@ -1,0 +1,424 @@
+openapi: 3.0.3
+info:
+  title: Pulsar Contracts API
+  version: 1.0.0
+  description: |
+    REST API for the Pulsar payment-processing smart contract on Stellar Soroban.
+
+    ## Authentication
+    All mutating endpoints require the caller's Stellar account address in the
+    request body. The API forwards calls to the contract which enforces
+    on-chain authorization via `require_auth`.
+
+    ## Rate Limiting
+    The API does not impose hard rate limits itself. Stellar's fee market
+    provides protocol-level rate limiting. For stricter throttling, deploy an
+    API gateway with a token-bucket limiter keyed on the caller address.
+
+    ## Pagination
+    List endpoints support cursor-based pagination. Pass the `next_cursor`
+    value from a response as `cursor` in the next request. The cursor is
+    opaque — do not attempt to parse it. Maximum 100 results per page.
+
+    ## Error Format
+    All errors follow the shape:
+    ```json
+    { "error": { "code": "ErrorName", "message": "Human-readable description" } }
+    ```
+  contact:
+    name: Pulsar Contributors
+    url: https://github.com/devEunicee/pulsar-contracts
+  license:
+    name: MIT
+    url: https://github.com/devEunicee/pulsar-contracts/blob/main/LICENSE
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://api.pulsar.example.com
+    description: Production (replace with actual URL)
+
+tags:
+  - name: health
+    description: Service health
+  - name: merchants
+    description: Merchant registration and lookup
+  - name: payments
+    description: Payment processing and history
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/merchants:
+    post:
+      tags: [merchants]
+      summary: Register a merchant
+      operationId: registerMerchant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterMerchantRequest'
+            example:
+              merchant_address: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
+              name: My Store
+              description: Online retail store
+              contact_info: contact@mystore.com
+              category: Retail
+      responses:
+        '201':
+          description: Merchant registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '422':
+          $ref: '#/components/responses/InvalidInput'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/merchants/{id}:
+    get:
+      tags: [merchants]
+      summary: Get merchant by address
+      operationId: getMerchant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Merchant Stellar address (G...)
+          schema:
+            type: string
+            example: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
+      responses:
+        '200':
+          description: Merchant record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Merchant'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/payments:
+    post:
+      tags: [payments]
+      summary: Process a payment
+      operationId: processPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessPaymentRequest'
+            example:
+              payer: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
+              order:
+                order_id: ORDER_001
+                merchant_address: GBHFGY3ZNEJWLW4HSED4XFXFNLYGIFAXH6LKLHM3QJPZEZVJHAHPVQJ
+                payer: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
+                token: CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+                amount: 1000
+                description: Invoice #001
+                expires_at: 0
+              signature: aabbcc...ddeeff
+      responses:
+        '201':
+          description: Payment processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '422':
+          $ref: '#/components/responses/InvalidInput'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      tags: [payments]
+      summary: List merchant payment history
+      operationId: listPayments
+      parameters:
+        - name: merchant
+          in: query
+          required: true
+          description: Merchant Stellar address
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque pagination cursor from previous response
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Number of results (max 100)
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - name: date_start
+          in: query
+          required: false
+          description: Unix timestamp lower bound
+          schema:
+            type: integer
+        - name: date_end
+          in: query
+          required: false
+          description: Unix timestamp upper bound
+          schema:
+            type: integer
+        - name: amount_min
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: amount_max
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [Any, Completed, PartiallyRefunded, FullyRefunded]
+            default: Any
+        - name: sort_field
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [Date, Amount]
+            default: Date
+        - name: sort_order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [Ascending, Descending]
+            default: Descending
+      responses:
+        '200':
+          description: Paginated payment list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentPage'
+        '422':
+          $ref: '#/components/responses/InvalidInput'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/payments/{id}:
+    get:
+      tags: [payments]
+      summary: Get payment by order ID
+      operationId: getPayment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Order ID
+          schema:
+            type: string
+            example: ORDER_001
+        - name: caller
+          in: query
+          required: true
+          description: Caller address (payer, merchant, or admin)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/InvalidInput'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    RegisterMerchantRequest:
+      type: object
+      required: [merchant_address, name, description, contact_info, category]
+      properties:
+        merchant_address:
+          type: string
+          description: Stellar address of the merchant (G...)
+        name:
+          type: string
+        description:
+          type: string
+        contact_info:
+          type: string
+        category:
+          type: string
+          enum: [Retail, Food, Services, Digital, Other]
+
+    ProcessPaymentRequest:
+      type: object
+      required: [payer, order, signature]
+      properties:
+        payer:
+          type: string
+          description: Payer Stellar address
+        order:
+          $ref: '#/components/schemas/Order'
+        signature:
+          type: string
+          description: 64-byte ed25519 signature (hex-encoded)
+
+    Order:
+      type: object
+      required: [order_id, merchant_address, payer, token, amount, description]
+      properties:
+        order_id:
+          type: string
+        merchant_address:
+          type: string
+        payer:
+          type: string
+        token:
+          type: string
+          description: Token contract address
+        amount:
+          type: integer
+          description: Payment amount in token base units
+        description:
+          type: string
+        expires_at:
+          type: integer
+          description: UNIX timestamp; 0 means never expires
+          default: 0
+
+    Merchant:
+      type: object
+      properties:
+        address:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        contact_info:
+          type: string
+        category:
+          type: string
+        active:
+          type: boolean
+        registered_at:
+          type: integer
+
+    Payment:
+      type: object
+      properties:
+        order_id:
+          type: string
+        merchant_address:
+          type: string
+        payer:
+          type: string
+        token:
+          type: string
+        amount:
+          type: integer
+        description:
+          type: string
+        status:
+          type: string
+          enum: [Completed, PartiallyRefunded, FullyRefunded]
+        paid_at:
+          type: integer
+
+    PaymentPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Pass as `cursor` in the next request; null when no more pages
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+            message:
+              type: string
+              description: Human-readable description
+
+  responses:
+    InvalidInput:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: InvalidInput
+              message: Missing required fields
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: MerchantNotFound
+              message: Merchant not registered
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: InternalError
+              message: An unexpected error occurred

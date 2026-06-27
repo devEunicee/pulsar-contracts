@@ -1,0 +1,12 @@
+[package]
+name = "refund-management"
+version = "0.1.0"
+edition = "2021"
+description = "Refund workflow service for Pulsar (issue #274)"
+
+# This crate lives outside the Soroban workspace intentionally (no soroban deps).
+[workspace]
+
+[lib]
+name = "refund_management"
+path = "src/lib.rs"

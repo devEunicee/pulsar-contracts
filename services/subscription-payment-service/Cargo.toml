@@ -1,0 +1,27 @@
+[package]
+name = "subscription-payment-service"
+version = "0.1.0"
+edition = "2021"
+authors = ["Pulsar Team"]
+description = "Service for managing recurring subscription payments"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "1.0"
+async-trait = "0.1"
+backoff = { version = "0.4", features = ["tokio"] }
+clap = { version = "4.4", features = ["derive"] }
+dotenv = "0.15"
+crond = "0.1"
+rand = "0.8"
+
+[dev-dependencies]
+tokio-test = "0.4"

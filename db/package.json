@@ -1,0 +1,14 @@
+{
+  "name": "pulsar-db",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "migrate:up": "node migrate.js up",
+    "migrate:down": "node migrate.js down",
+    "migrate:status": "node migrate.js status",
+    "migrate:dry-run": "node migrate.js dry-run"
+  },
+  "dependencies": {
+    "pg": "8.11.5"
+  }
+}
