@@ -1630,7 +1630,7 @@
 
 ---
 
-### SC-031 · No check for duplicate signers in `required_signers` list
+### SC-031 · No check for duplicate signers in `required_signers` list [COMPLETED]
 
 **Description:** `initiate_multisig_payment` does not deduplicate `required_signers`. The same address appearing twice lets one signer satisfy two slots and execute a payment alone.
 

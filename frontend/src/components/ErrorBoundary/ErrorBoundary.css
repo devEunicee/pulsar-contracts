@@ -1,0 +1,61 @@
+.eb-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 1.5rem;
+  border: 1px solid #f87171;
+  border-radius: 0.5rem;
+  background: #fff1f2;
+  color: #7f1d1d;
+  max-width: 40rem;
+  margin: 2rem auto;
+  text-align: center;
+}
+
+@media (prefers-color-scheme: dark) {
+  .eb-container {
+    background: #1f0a0a;
+    border-color: #991b1b;
+    color: #fca5a5;
+  }
+}
+
+.eb-icon { font-size: 2rem; }
+.eb-heading { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.eb-message { margin: 0; font-size: 0.875rem; }
+
+.eb-details {
+  width: 100%;
+  text-align: left;
+  font-size: 0.75rem;
+}
+.eb-details summary { cursor: pointer; user-select: none; margin-bottom: 0.5rem; }
+.eb-stack {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fef2f2;
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  font-family: monospace;
+}
+
+.eb-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
+
+.eb-btn {
+  padding: 0.4rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.eb-btn--primary { background: #dc2626; color: #fff; }
+.eb-btn--primary:hover { background: #b91c1c; }
+.eb-btn--secondary { background: transparent; border-color: #dc2626; color: #dc2626; }
+.eb-btn--secondary:hover { background: #fee2e2; }
+.eb-btn--ghost { background: transparent; color: inherit; text-decoration: underline; }

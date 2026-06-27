@@ -1,0 +1,19 @@
+{
+  "name": "pulsar-event-indexer",
+  "version": "1.0.0",
+  "description": "Off-chain event indexer for Pulsar smart contract events",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^12.0.0",
+    "express": "^4.18.2",
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

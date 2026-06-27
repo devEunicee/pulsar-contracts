@@ -1,0 +1,12 @@
+[package]
+name = "reconciliation"
+version = "0.1.0"
+edition = "2021"
+description = "Blockchain-to-database reconciliation service for Pulsar (issue #282)"
+
+# Standalone crate — outside the Soroban workspace.
+[workspace]
+
+[lib]
+name = "reconciliation"
+path = "src/lib.rs"

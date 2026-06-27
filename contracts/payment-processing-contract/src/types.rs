@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Vec};
 
 // ── Merchant ──────────────────────────────────────────────────────────────────
@@ -44,6 +46,10 @@ pub struct PaymentOrder {
     pub token: Address,
     pub amount: i128,
     pub description: String,
+    /// Unix timestamp (seconds) when the order expires. A value of `0`
+    /// is treated as "never expires" (an order that does not expire).
+    /// This special-case is relied upon by existing integrations and is
+    /// intentionally accepted by the contract.
     pub expires_at: u64,
 }
 
@@ -71,6 +77,8 @@ pub enum RefundStatus {
     Approved,
     Rejected,
     Completed,
+    /// Payer has escalated a merchant-rejected refund for admin resolution.
+    Disputed,
 }
 
 #[contracttype]
@@ -83,6 +91,29 @@ pub struct RefundRecord {
     pub status: RefundStatus,
     pub initiated_by: Address,
     pub initiated_at: u64,
+    /// Set when the payer disputes a merchant rejection. Empty string if not disputed.
+    pub dispute_reason: String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SubscriptionStatus {
+    Active,
+    Cancelled,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionPlan {
+    pub subscription_id: Bytes,
+    pub merchant_address: Address,
+    pub payer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub interval_seconds: u64,
+    pub next_payment_at: u64,
+    pub status: SubscriptionStatus,
+    pub created_at: u64,
 }
 
 // ── Multisig ──────────────────────────────────────────────────────────────────
@@ -99,13 +130,34 @@ pub struct MultisigPayment {
     pub created_at: u64,
 }
 
+// ── Subscriptions ───────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionState {
+    pub subscription_id: Bytes,
+    pub merchant_address: Address,
+    pub subscriber: Address,
+    pub active: bool,
+    pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionPage {
+    pub records: Vec<SubscriptionState>,
+    /// Opaque pagination cursor pointing to the last returned subscription id.
+    pub next_cursor: Option<Bytes>,
+    pub total: u32,
+}
+
 // ── Query helpers ─────────────────────────────────────────────────────────────
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SortField {
     Date,
-    Amount,
+    Amount, // .
 }
 
 #[contracttype]
@@ -131,7 +183,9 @@ pub struct PaymentFilter {
     pub date_end: Option<u64>,
     pub amount_min: Option<i128>,
     pub amount_max: Option<i128>,
-    pub token: Option<Address>,
+    /// Filter by one or more token contract addresses. `None` matches all tokens.
+    /// An empty list also matches all tokens (treated as no filter).
+    pub tokens: Option<Vec<Address>>,
     pub status: StatusFilter,
 }
 
@@ -139,15 +193,34 @@ pub struct PaymentFilter {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaymentPage {
     pub records: Vec<PaymentRecord>,
+    /// Opaque pagination cursor pointing to the last record on the page.
+    ///
+    /// Current format: raw `order_id` bytes of the last record. Callers that
+    /// transport the cursor over textual channels (CLI, HTTP) should encode
+    /// it (for example as base64). The contract treats the cursor as an opaque
+    /// `Bytes` value and will start the next page after the matching `order_id`.
+    ///
+    /// NOTE: changing this format is a breaking change. Any future change
+    /// should use a versioned encoding and include a migration note in an ADR.
     pub next_cursor: Option<Bytes>,
     pub total: u32,
 }
 
-// ── Global stats ──────────────────────────────────────────────────────────────
+// ── Stats ─────────────────────────────────────────────────────────────────────
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GlobalStats {
+    pub total_payments: u64,
+    pub total_volume: i128,
+    pub total_refunds: u64,
+    pub total_refund_volume: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MerchantStats {
+    pub merchant_address: Address,
     pub total_payments: u64,
     pub total_volume: i128,
     pub total_refunds: u64,
@@ -163,73 +236,48 @@ pub struct AdminConfig {
     pub threshold: u32,
 }
 
-// ── Notification ──────────────────────────────────────────────────────────────
+// ── Subscription ──────────────────────────────────────────────────────────────
 
+/// Defines the recurring payment terms for a subscription.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum NotificationChannel {
-    Email,
-    Sms,
-    Push,
+pub struct SubscriptionPlan {
+    /// Payment interval in seconds (e.g. 2_592_000 for 30 days).
+    pub interval: u64,
+    /// Amount charged per interval, in the smallest token unit.
+    pub amount: i128,
+    /// Token contract address used for recurring charges.
+    pub token: Address,
 }
 
+/// Lifecycle state of a subscription.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum NotificationEvent {
-    PaymentReceived,
-    PaymentFailed,
-    RefundInitiated,
-    RefundApproved,
-    RefundRejected,
-    RefundExecuted,
-    DisputeOpened,
-    DisputeResolved,
-    MultisigReady,
-    AdminAlert,
+pub enum SubscriptionStatus {
+    Active,
+    Cancelled,
 }
 
+/// Persisted state for a single payer–merchant subscription.
+///
+/// # Off-chain scheduler requirement
+/// Soroban contracts cannot autonomously schedule execution. An off-chain
+/// scheduler service MUST call `process_subscription_payment` at each interval
+/// boundary. The contract enforces correctness (idempotency, interval guard,
+/// status checks) but relies on the scheduler for timely invocation.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DeliveryStatus {
-    Pending,
-    Delivered,
-    Failed,
-    /// Suppressed by DND or rate-limit
-    Skipped,
-}
-
-/// A single queued notification record.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NotificationRecord {
-    pub notification_id: Bytes,
-    pub recipient: Address,
-    pub channel: NotificationChannel,
-    pub event: NotificationEvent,
-    /// Template key for off-chain renderer, e.g. "payment_received_v1"
-    pub template_key: String,
-    /// Arbitrary payload bytes (JSON encoded by caller)
-    pub payload: Bytes,
-    pub status: DeliveryStatus,
+pub struct SubscriptionState {
+    /// Unique subscription identifier (caller-supplied).
+    pub subscription_id: Bytes,
+    pub payer: Address,
+    pub merchant: Address,
+    pub plan: SubscriptionPlan,
+    pub status: SubscriptionStatus,
+    /// Ledger timestamp when the subscription was created.
     pub created_at: u64,
-    pub delivered_at: Option<u64>,
-    /// Number of delivery attempts
-    pub attempts: u32,
-}
-
-/// Per-recipient notification preferences.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NotificationPreferences {
-    pub recipient: Address,
-    /// Channels the recipient has opted into
-    pub enabled_channels: Vec<NotificationChannel>,
-    /// Events the recipient has opted out of (empty = all enabled)
-    pub disabled_events: Vec<NotificationEvent>,
-    /// DND window: UTC hour start (0-23)
-    pub dnd_start_hour: Option<u32>,
-    /// DND window: UTC hour end (0-23)
-    pub dnd_end_hour: Option<u32>,
+    /// Ledger timestamp of the most recent successful payment (0 if none yet).
+    pub last_charged_at: u64,
 }
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -238,30 +286,32 @@ pub struct NotificationPreferences {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
+    AdminConfig,
     ContractVersion,
     Merchant(Address),
     Payment(Bytes),
-    MerchantPaymentChunk(Address, u32),
-    MerchantPaymentCount(Address),
-    PayerPaymentChunk(Address, u32),
-    PayerPaymentCount(Address),
+    /// Flat payment index list per merchant.
+    MerchantPayments(Address),
+    /// Flat payment index list per payer.
+    PayerPayments(Address),
+    /// Global flat payment index.
+    GlobalPaymentIndex,
     Refund(Bytes),
     Multisig(Bytes),
     CleanupPeriod,
     DefaultMultisigExpiry,
-    GlobalPaymentChunk(u32),
-    GlobalPaymentCount,
     GlobalStats,
-    AllPayments,
     AllRefunds,
     WhitelistEnabled,
     Whitelist(Address),
-    // Notification keys
-    Notification(Bytes),
-    RecipientNotifications(Address),
-    NotificationPrefs(Address),
-    /// Rolling count of notifications sent to a recipient within the rate window
-    NotificationRateCount(Address),
-    /// Timestamp when the current rate window started for a recipient
-    NotificationRateWindowStart(Address),
+    OrderRefundCount(Bytes),
+    ArchivedPayment(Bytes),
+    TokenAllowlistEnabled,
+    AllowedToken(Address),
+    Subscription(Bytes),
+    MerchantStats(Address),
+    // Connection pooling storage keys
+    PoolConfig,
+    PoolStats,
+    PoolConnection(u32),
 }

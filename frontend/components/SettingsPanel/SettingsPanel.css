@@ -1,0 +1,124 @@
+.sp-container {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  font-family: system-ui, sans-serif;
+  position: relative;
+}
+
+/* Toast */
+.sp-toast {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  z-index: 1000;
+  animation: sp-fadein 0.2s ease;
+}
+.sp-toast--success { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+.sp-toast--info    { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+
+@keyframes sp-fadein { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Form */
+.sp-form { display: flex; flex-direction: column; gap: 1.5rem; }
+
+/* Section */
+.sp-section {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin: 0;
+}
+.sp-section__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 0.25rem;
+}
+
+/* Fields */
+.sp-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  gap: 1rem;
+}
+.sp-field + .sp-field { border-top: 1px solid #f3f4f6; }
+.sp-field label { font-size: 0.9rem; color: #374151; }
+
+.sp-field select {
+  padding: 0.375rem 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: #fff;
+  cursor: pointer;
+}
+.sp-field select:focus { outline: 2px solid #3b82f6; outline-offset: 2px; }
+
+.sp-field--toggle input[type="checkbox"] {
+  width: 2.5rem;
+  height: 1.25rem;
+  cursor: pointer;
+  accent-color: #3b82f6;
+}
+
+/* Actions */
+.sp-actions {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+/* Buttons */
+.sp-btn {
+  padding: 0.5rem 1.25rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s;
+}
+.sp-btn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.sp-btn--primary   { background: #3b82f6; color: #fff; }
+.sp-btn--primary:hover { background: #2563eb; }
+.sp-btn--ghost     { background: transparent; color: #374151; border: 1px solid #d1d5db; }
+.sp-btn--ghost:hover { background: #f9fafb; }
+.sp-btn--danger    { background: #ef4444; color: #fff; }
+.sp-btn--danger:hover { background: #dc2626; }
+
+/* Confirmation overlay */
+.sp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+.sp-dialog {
+  background: #fff;
+  border-radius: 10px;
+  padding: 1.75rem;
+  max-width: 380px;
+  width: 90%;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+}
+.sp-dialog__title { margin: 0 0 0.5rem; font-size: 1.1rem; color: #111827; }
+.sp-dialog__body  { color: #6b7280; font-size: 0.9rem; margin: 0 0 1.25rem; }
+.sp-dialog__actions { display: flex; justify-content: flex-end; gap: 0.75rem; }
+
+@media (max-width: 480px) {
+  .sp-actions { flex-direction: column-reverse; }
+  .sp-btn { width: 100%; }
+}
