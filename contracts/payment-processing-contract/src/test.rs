@@ -703,6 +703,32 @@ fn test_reject_refund() {
     assert_eq!(client.get_refund_status(&bytes(&env, "REFUND_001")), RefundStatus::Rejected);
 }
 
+// SC-042: pending_refund_amount must be decremented on rejection so a
+// re-initiated refund for the same amount can succeed.
+#[test]
+fn test_reject_refund_decrements_pending_and_allows_reinitiate() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Step 1: initiate a refund for 500
+    client.initiate_refund(&payer, &bytes(&env, "R_REJECT_1"), &bytes(&env, "ORDER_001"), &500, &str(&env, "first attempt"));
+
+    // pending_refund_amount should now be 500
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.pending_refund_amount, 500);
+
+    // Step 2: merchant rejects it
+    client.reject_refund(&merchant, &bytes(&env, "R_REJECT_1"), &None);
+
+    // pending_refund_amount must be back to 0 (no underflow)
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.pending_refund_amount, 0);
+
+    // Step 3: payer can initiate the same amount again successfully
+    client.initiate_refund(&payer, &bytes(&env, "R_REJECT_2"), &bytes(&env, "ORDER_001"), &500, &str(&env, "second attempt"));
+    assert_eq!(client.get_refund_status(&bytes(&env, "R_REJECT_2")), RefundStatus::Pending);
+}
+
 #[test]
 fn test_execute_refund_unauthorized_fails() {
     let (env, client) = setup();
