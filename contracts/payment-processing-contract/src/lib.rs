@@ -1511,6 +1511,8 @@ impl PaymentContract {
             dnd_start_hour,
             dnd_end_hour,
         };
+        dispute.resolved_at = Some(env.ledger().timestamp());
+        dispute.resolution_notes = resolution_notes;
 
         storage::save_notification_prefs(&env, &prefs);
 
