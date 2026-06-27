@@ -95,6 +95,27 @@ pub struct RefundRecord {
     pub dispute_reason: String,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SubscriptionStatus {
+    Active,
+    Cancelled,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionPlan {
+    pub subscription_id: Bytes,
+    pub merchant_address: Address,
+    pub payer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub interval_seconds: u64,
+    pub next_payment_at: u64,
+    pub status: SubscriptionStatus,
+    pub created_at: u64,
+}
+
 // ── Multisig ──────────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -269,11 +290,7 @@ pub enum DataKey {
     ContractVersion,
     Merchant(Address),
     Payment(Bytes),
-    MerchantPaymentChunk(Address, u32),
-    MerchantPaymentCount(Address),
-    PayerPaymentChunk(Address, u32),
-    PayerPaymentCount(Address),
-    /// Flat payment index list per merchant (replaces chunked approach).
+    /// Flat payment index list per merchant.
     MerchantPayments(Address),
     /// Flat payment index list per payer.
     PayerPayments(Address),

@@ -441,6 +441,41 @@ fn setup_paid_order(env: &Env, client: &PaymentContractClient) -> (Address, Addr
     (admin, merchant, payer, token)
 }
 
+fn setup_subscription(
+    env: &Env,
+    client: &PaymentContractClient,
+) -> (Address, Address, Address, Address, Bytes) {
+    let admin = Address::generate(env);
+    let merchant = Address::generate(env);
+    let payer = Address::generate(env);
+    let token = create_token(env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(env, "Store"),
+        &str(env, "desc"),
+        &str(env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(env, &token, &admin, &payer, 5000);
+
+    let subscription_id = bytes(env, "SUB_001");
+    client.create_subscription(
+        &payer,
+        &subscription_id,
+        &merchant,
+        &token,
+        &1000,
+        &3600,
+        &1000,
+        &3000,
+    );
+
+    (admin, merchant, payer, token, subscription_id)
+}
+
 #[test]
 fn test_successful_refund_flow() {
     let (env, client) = setup();
@@ -668,6 +703,32 @@ fn test_reject_refund() {
     assert_eq!(client.get_refund_status(&bytes(&env, "REFUND_001")), RefundStatus::Rejected);
 }
 
+// SC-042: pending_refund_amount must be decremented on rejection so a
+// re-initiated refund for the same amount can succeed.
+#[test]
+fn test_reject_refund_decrements_pending_and_allows_reinitiate() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, _token) = setup_paid_order(&env, &client);
+
+    // Step 1: initiate a refund for 500
+    client.initiate_refund(&payer, &bytes(&env, "R_REJECT_1"), &bytes(&env, "ORDER_001"), &500, &str(&env, "first attempt"));
+
+    // pending_refund_amount should now be 500
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.pending_refund_amount, 500);
+
+    // Step 2: merchant rejects it
+    client.reject_refund(&merchant, &bytes(&env, "R_REJECT_1"), &None);
+
+    // pending_refund_amount must be back to 0 (no underflow)
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.pending_refund_amount, 0);
+
+    // Step 3: payer can initiate the same amount again successfully
+    client.initiate_refund(&payer, &bytes(&env, "R_REJECT_2"), &bytes(&env, "ORDER_001"), &500, &str(&env, "second attempt"));
+    assert_eq!(client.get_refund_status(&bytes(&env, "R_REJECT_2")), RefundStatus::Pending);
+}
+
 #[test]
 fn test_execute_refund_unauthorized_fails() {
     let (env, client) = setup();
@@ -705,6 +766,103 @@ fn test_concurrent_refunds_exceeding_limit_second_rejected() {
         client.try_initiate_refund(&payer, &bytes(&env, "R_RACE_2"), &bytes(&env, "ORDER_001"), &400, &str(&env, "second")),
         Err(Ok(PaymentError::RefundAmountExceedsPayment))
     );
+}
+
+#[test]
+fn test_create_subscription_emits_event() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+
+    client.set_admin(&admin);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com "),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &admin, &payer, 5000);
+
+    let subscription_id = bytes(&env, "SUB_001");
+    client.create_subscription(
+        &payer,
+        &subscription_id,
+        &merchant,
+        &token,
+        &1000,
+        &3600,
+        &1000,
+        &3000,
+    );
+
+    let events = env.events().all();
+    let last_event = events.get(events.len() - 1).unwrap();
+    let topics = last_event.1;
+    assert_eq!(topics.len(), 1);
+    let topic: String = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, str(&env, "subscription_created"));
+
+    let event_subscription_id: Bytes = last_event.2.into_val(&env);
+    assert_eq!(event_subscription_id, subscription_id);
+}
+
+#[test]
+fn test_process_subscription_payment_emits_event() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, _token, subscription_id) = setup_subscription(&env, &client);
+
+    env.ledger().set_timestamp(1000);
+    client.process_subscription_payment(&payer, &subscription_id, &bytes(&env, "ORDER_002"));
+
+    let events = env.events().all();
+    let last_event = events.get(events.len() - 1).unwrap();
+    let topics = last_event.1;
+    assert_eq!(topics.len(), 1);
+    let topic: String = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, str(&env, "subscription_charged"));
+
+    let (event_subscription_id, event_payer, event_merchant, event_amount, event_token): (
+        Bytes,
+        Address,
+        Address,
+        i128,
+        Address,
+    ) = last_event.2.into_val(&env);
+    assert_eq!(event_subscription_id, subscription_id);
+    assert_eq!(event_payer, payer);
+    assert_eq!(event_merchant, merchant);
+    assert_eq!(event_amount, 1000);
+}
+
+#[test]
+fn test_cancel_subscription_emits_event() {
+    let (env, client) = setup();
+    let (_admin, merchant, payer, _token, subscription_id) = setup_subscription(&env, &client);
+
+    client.cancel_subscription(&payer, &subscription_id);
+
+    let events = env.events().all();
+    let last_event = events.get(events.len() - 1).unwrap();
+    let topics = last_event.1;
+    assert_eq!(topics.len(), 1);
+    let topic: String = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, str(&env, "subscription_cancelled"));
+
+    let (event_subscription_id, event_payer, event_merchant, event_amount, event_token): (
+        Bytes,
+        Address,
+        Address,
+        i128,
+        Address,
+    ) = last_event.2.into_val(&env);
+    assert_eq!(event_subscription_id, subscription_id);
+    assert_eq!(event_payer, payer);
+    assert_eq!(event_merchant, merchant);
+    assert_eq!(event_amount, 1000);
 }
 
 // ── Payment history tests ─────────────────────────────────────────────────────
@@ -1212,6 +1370,50 @@ fn test_multisig_payment_expiry() {
     env.ledger().with_mut(|l| l.timestamp = 86400 + 3601);
     assert_eq!(client.try_sign_multisig_payment(&signer1, &bytes(&env, "MS_EXPIRY")), Err(Ok(PaymentError::PaymentExpired)));
     assert_eq!(client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_EXPIRY")), Err(Ok(PaymentError::PaymentExpired)));
+}
+
+// SC-036: when expires_at == 0 the contract must apply DefaultMultisigExpiry
+// rather than treating 0 as an always-expired timestamp.
+#[test]
+fn test_multisig_zero_expires_at_applies_default_expiry() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
+    mint(&env, &token, &signer1, 5000);
+
+    // Build an order and initiate; initiate_multisig_payment always sets a real
+    // expires_at, so we fast-forward time to within the 24-hour default window
+    // to test sign succeeds, then past it to test PaymentExpired.
+    let order = PaymentOrder {
+        order_id: bytes(&env, "MS_ZERO_EXP"),
+        merchant_address: merchant.clone(),
+        payer: signer1.clone(),
+        token: token.clone(),
+        amount: 500,
+        description: str(&env, "zero expiry test"),
+        expires_at: 0,
+    };
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+
+    // Timestamp = 1000 so created_at = 1000; default expiry = 86400 s.
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    client.initiate_multisig_payment(&signer1, &bytes(&env, "MS_ZERO_EXP"), &order, &signers);
+
+    // Within the window: signing should succeed
+    env.ledger().with_mut(|l| l.timestamp = 1000 + 86400 - 1);
+    client.sign_multisig_payment(&signer1, &bytes(&env, "MS_ZERO_EXP"));
+
+    // Past the window (created_at + default_expiry + 1): execute should fail
+    env.ledger().with_mut(|l| l.timestamp = 1000 + 86400 + 1);
+    assert_eq!(
+        client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_ZERO_EXP")),
+        Err(Ok(PaymentError::PaymentExpired))
+    );
 }
 
 // ── Subscription tests ────────────────────────────────────────────────────────

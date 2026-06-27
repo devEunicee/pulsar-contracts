@@ -235,6 +235,44 @@ pub fn remove_global_payment_id(env: &Env, order_id: &Bytes) {
     set_global_payment_ids(env, &new_ids);
 }
 
+fn remove_id_from_list(env: &Env, list: Vec<Bytes>, target: &Bytes) -> Vec<Bytes> {
+    let mut new_list = Vec::new(env);
+    for id in list.iter() {
+        if &id != target {
+            new_list.push_back(id);
+        }
+    }
+    new_list
+}
+
+pub fn remove_merchant_payment_id(env: &Env, merchant: &Address, order_id: &Bytes) {
+    let ids = get_merchant_payment_ids(env, merchant);
+    let new_ids = remove_id_from_list(env, ids, order_id);
+    env.storage()
+        .persistent()
+        .set(&DataKey::MerchantPayments(merchant.clone()), &new_ids);
+}
+
+pub fn remove_payer_payment_id(env: &Env, payer: &Address, order_id: &Bytes) {
+    let ids = get_payer_payment_ids(env, payer);
+    let new_ids = remove_id_from_list(env, ids, order_id);
+    env.storage()
+        .persistent()
+        .set(&DataKey::PayerPayments(payer.clone()), &new_ids);
+}
+
+pub fn remove_global_payment_id(env: &Env, order_id: &Bytes) {
+    let ids = get_global_payment_ids(env);
+    let new_ids = remove_id_from_list(env, ids, order_id);
+    set_global_payment_ids(env, &new_ids);
+}
+
+pub fn mark_payment_archived(env: &Env, order_id: &Bytes) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ArchivedPayment(order_id.clone()), &true);
+}
+
 // ── Refund ────────────────────────────────────────────────────────────────────
 
 pub fn get_refund(env: &Env, refund_id: &Bytes) -> Option<RefundRecord> {
@@ -254,6 +292,18 @@ pub fn save_refund(env: &Env, refund: &RefundRecord) {
     env.storage()
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
+}
+
+pub fn get_subscription(env: &Env, subscription_id: &Bytes) -> Option<SubscriptionPlan> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Subscription(subscription_id.clone()))
+}
+
+pub fn save_subscription(env: &Env, subscription: &SubscriptionPlan) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Subscription(subscription.subscription_id.clone()), subscription);
 }
 
 pub fn get_all_refund_ids(env: &Env) -> Vec<Bytes> {

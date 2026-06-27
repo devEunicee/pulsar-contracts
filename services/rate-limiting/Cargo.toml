@@ -1,0 +1,12 @@
+[package]
+name = "rate-limiting"
+version = "0.1.0"
+edition = "2021"
+description = "Token-bucket rate limiting service for Pulsar (issue #276)"
+
+# Standalone crate — outside the Soroban workspace.
+[workspace]
+
+[lib]
+name = "rate_limiting"
+path = "src/lib.rs"

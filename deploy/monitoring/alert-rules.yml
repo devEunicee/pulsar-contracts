@@ -1,0 +1,20 @@
+groups:
+  - name: pulsar-contract-alerts
+    rules:
+      - alert: HighPaymentErrorRate
+        expr: rate(payment_errors_total[5m]) / rate(payment_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Payment processing error rate is above threshold
+          description: Investigate the contract or upstream token integration immediately.
+
+      - alert: HighPaymentLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(payment_processing_seconds_bucket[10m]))) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Payment processing latency is elevated
+          description: Review recent deployments and contract invocation patterns.

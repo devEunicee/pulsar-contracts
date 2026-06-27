@@ -1,5 +1,5 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { PayerDashboard } from "./components/PayerDashboard";
+import { AppRouter } from "./components/Router";
 
-createRoot(document.getElementById("root")!).render(<PayerDashboard />);
+createRoot(document.getElementById("root")!).render(<AppRouter />);
