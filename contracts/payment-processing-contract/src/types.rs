@@ -290,14 +290,7 @@ pub enum DataKey {
     ContractVersion,
     Merchant(Address),
     Payment(Bytes),
-    MerchantPayments(Address),
-    PayerPayments(Address),
-    GlobalPaymentIndex,
-    MerchantPaymentChunk(Address, u32),
-    MerchantPaymentCount(Address),
-    PayerPaymentChunk(Address, u32),
-    PayerPaymentCount(Address),
-    /// Flat payment index list per merchant (replaces chunked approach).
+    /// Flat payment index list per merchant.
     MerchantPayments(Address),
     /// Flat payment index list per payer.
     PayerPayments(Address),
