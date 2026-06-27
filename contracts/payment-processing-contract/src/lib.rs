@@ -1464,17 +1464,82 @@ impl PaymentContract {
         let next_cursor = if slice.len() > cap {
             slice.get(cap - 1).map(|r| r.order_id.clone())
         } else {
-            None
+            DeliveryStatus::Failed
         };
         let mut page: Vec<PaymentRecord> = Vec::new(env);
         for i in 0..(slice.len().min(cap)) {
             page.push_back(slice[i].clone());
         }
 
-        Ok(PaymentPage {
-            records: page,
-            next_cursor,
-            total,
-        })
+        notif.status = DeliveryStatus::Pending;
+        storage::save_notification(&env, &notif);
+
+        env.events().publish(
+            (String::from_str(&env, "notification_retried"),),
+            notification_id,
+        );
+        Ok(())
+    }
+
+    /// Set notification preferences for the calling recipient.
+    pub fn set_notification_preferences(
+        env: Env,
+        recipient: Address,
+        enabled_channels: Vec<NotificationChannel>,
+        disabled_events: Vec<NotificationEvent>,
+        dnd_start_hour: Option<u32>,
+        dnd_end_hour: Option<u32>,
+    ) -> Result<(), PaymentError> {
+        recipient.require_auth();
+
+        // Validate DND hours (0-23)
+        if let Some(h) = dnd_start_hour {
+            if h > 23 {
+                return Err(PaymentError::InvalidInput);
+            }
+        }
+        if let Some(h) = dnd_end_hour {
+            if h > 23 {
+                return Err(PaymentError::InvalidInput);
+            }
+        }
+
+        let prefs = NotificationPreferences {
+            recipient: recipient.clone(),
+            enabled_channels,
+            disabled_events,
+            dnd_start_hour,
+            dnd_end_hour,
+        };
+
+        storage::save_notification_prefs(&env, &prefs);
+
+        env.events().publish(
+            (String::from_str(&env, "notification_prefs_updated"),),
+            recipient,
+        );
+        Ok(())
+    }
+
+    /// Get notification preferences for a recipient.
+    pub fn get_notification_preferences(
+        env: Env,
+        recipient: Address,
+    ) -> Option<NotificationPreferences> {
+        storage::get_notification_prefs(&env, &recipient)
+    }
+
+    /// Get a single notification record by ID.
+    pub fn get_notification(
+        env: Env,
+        notification_id: Bytes,
+    ) -> Result<NotificationRecord, PaymentError> {
+        storage::get_notification(&env, &notification_id)
+            .ok_or(PaymentError::NotificationNotFound)
+    }
+
+    /// Get all notification IDs for a recipient (for history tracking).
+    pub fn get_recipient_notifications(env: Env, recipient: Address) -> Vec<Bytes> {
+        storage::get_recipient_notification_ids(&env, &recipient)
     }
 }
