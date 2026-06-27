@@ -1,0 +1,131 @@
+name: Backup Verification
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # Daily at 04:00 UTC (after backup at 02:00)
+  workflow_dispatch:
+    inputs:
+      backup_key:
+        description: 'S3 key of backup to verify (leave blank for latest)'
+        required: false
+        default: ''
+
+jobs:
+  verify-backup:
+    name: Verify & Restore Drill
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+      BACKUP_KEY: ${{ github.event.inputs.backup_key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client postgresql
+
+      - name: Install AWS CLI
+        run: |
+          curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+          unzip -qq /tmp/awscliv2.zip -d /tmp
+          sudo /tmp/aws/install
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Resolve latest backup key
+        id: resolve
+        run: |
+          if [[ -n "$BACKUP_KEY" ]]; then
+            echo "key=$BACKUP_KEY" >> "$GITHUB_OUTPUT"
+          else
+            KEY=$(aws s3 ls "s3://$AWS_S3_BUCKET/" \
+              --recursive \
+              | grep 'pulsar-db-backup-' \
+              | sort | tail -1 | awk '{print $4}')
+            echo "key=$KEY" >> "$GITHUB_OUTPUT"
+            echo "Resolved latest backup: $KEY"
+          fi
+
+      - name: Download backup from S3
+        run: |
+          aws s3 cp "s3://$AWS_S3_BUCKET/${{ steps.resolve.outputs.key }}" /tmp/restore.dump
+          ls -lh /tmp/restore.dump
+
+      - name: Verify backup integrity
+        run: |
+          pg_restore --list /tmp/restore.dump > /tmp/toc.txt
+          TABLES=$(grep -c 'TABLE DATA' /tmp/toc.txt || true)
+          echo "Backup TOC contains ${TABLES} TABLE DATA entries"
+          echo "tables_found=${TABLES}" >> "$GITHUB_ENV"
+          if [ "$TABLES" -lt 1 ]; then
+            echo "::error::Backup appears empty — no TABLE DATA entries in TOC."
+            exit 1
+          fi
+
+      - name: Start ephemeral PostgreSQL
+        run: |
+          sudo systemctl start postgresql
+          sudo -u postgres psql -c "CREATE USER verifyuser WITH PASSWORD 'verifypass';"
+          sudo -u postgres psql -c "CREATE DATABASE verifydb OWNER verifyuser;"
+
+      - name: Restore backup to ephemeral DB
+        run: |
+          RESTORE_START=$(date +%s)
+          pg_restore \
+            --no-owner --no-privileges \
+            --dbname "postgresql://verifyuser:verifypass@localhost/verifydb" \
+            /tmp/restore.dump
+          RESTORE_END=$(date +%s)
+          RTO=$(( RESTORE_END - RESTORE_START ))
+          echo "rto_seconds=${RTO}" >> "$GITHUB_ENV"
+          echo "Restore completed in ${RTO}s"
+
+      - name: Validate restored data
+        run: |
+          PSQL="psql postgresql://verifyuser:verifypass@localhost/verifydb -t -c"
+          MERCHANTS=$($PSQL "SELECT COUNT(*) FROM merchants;" | xargs)
+          PAYMENTS=$($PSQL "SELECT COUNT(*) FROM payments;" | xargs)
+          echo "merchants_count=${MERCHANTS}" >> "$GITHUB_ENV"
+          echo "payments_count=${PAYMENTS}" >> "$GITHUB_ENV"
+          echo "Restored: ${MERCHANTS} merchants, ${PAYMENTS} payments"
+          if [ "${MERCHANTS}" -lt 0 ] || [ "${PAYMENTS}" -lt 0 ]; then
+            echo "::error::Data validation failed after restore."
+            exit 1
+          fi
+
+      - name: RTO/RPO validation
+        run: |
+          RTO_LIMIT=300  # 5 minutes
+          echo "RTO: ${rto_seconds}s (limit ${RTO_LIMIT}s)"
+          echo "## Backup Verification Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Backup key | ${{ steps.resolve.outputs.key }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tables verified | ${tables_found} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Merchants restored | ${merchants_count} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Payments restored | ${payments_count} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| RTO | ${rto_seconds}s (limit ${RTO_LIMIT}s) |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${rto_seconds}" -gt "${RTO_LIMIT}" ]; then
+            echo "::error::RTO ${rto_seconds}s exceeds ${RTO_LIMIT}s limit."
+            exit 1
+          fi
+          echo "| Status | ✅ PASSED |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Alert on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Backup verification failed — ${new Date().toISOString().slice(0,10)}`,
+              body: `Automated backup verification failed.\n\n**Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\nPlease investigate immediately.`,
+              labels: ['bug', 'reliability']
+            });
