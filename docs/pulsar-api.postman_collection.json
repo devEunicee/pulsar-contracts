@@ -1,0 +1,94 @@
+{
+  "info": {
+    "name": "Pulsar Contracts API",
+    "description": "Postman collection for the Pulsar payment-processing REST API.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "merchant_address", "value": "GBHFGY3ZNEJWLW4HSED4XFXFNLYGIFAXH6LKLHM3QJPZEZVJHAHPVQJ" },
+    { "key": "payer_address", "value": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN" },
+    { "key": "token_address", "value": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Merchants",
+      "item": [
+        {
+          "name": "POST /api/merchants — Register",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/merchants",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_address\": \"{{merchant_address}}\",\n  \"name\": \"My Store\",\n  \"description\": \"Online retail store\",\n  \"contact_info\": \"contact@mystore.com\",\n  \"category\": \"Retail\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /api/merchants/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/merchants/{{merchant_address}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "POST /api/payments — Process",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/payments",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payer\": \"{{payer_address}}\",\n  \"order\": {\n    \"order_id\": \"ORDER_001\",\n    \"merchant_address\": \"{{merchant_address}}\",\n    \"payer\": \"{{payer_address}}\",\n    \"token\": \"{{token_address}}\",\n    \"amount\": 1000,\n    \"description\": \"Invoice #001\",\n    \"expires_at\": 0\n  },\n  \"signature\": \"<64-byte-hex-signature>\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /api/payments — List (merchant history)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/payments?merchant={{merchant_address}}&limit=10&sort_field=Date&sort_order=Descending",
+              "query": [
+                { "key": "merchant", "value": "{{merchant_address}}" },
+                { "key": "limit", "value": "10" },
+                { "key": "sort_field", "value": "Date" },
+                { "key": "sort_order", "value": "Descending" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /api/payments/:id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/payments/ORDER_001?caller={{payer_address}}",
+              "query": [{ "key": "caller", "value": "{{payer_address}}" }]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
