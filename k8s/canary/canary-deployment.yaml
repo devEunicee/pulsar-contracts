@@ -1,0 +1,104 @@
+# Canary Deployment — Pulsar Contracts
+#
+# Traffic split: 95% stable (19 replicas) / 5% canary (1 replica)
+# Both deployments share the same Service selector label (app: pulsar-api).
+# Kubernetes routes traffic proportionally to the total pod count.
+
+# ── Stable deployment (19 replicas = 95%) ────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulsar-api-stable
+  namespace: pulsar
+  labels:
+    app: pulsar-api
+    track: stable
+spec:
+  replicas: 19
+  selector:
+    matchLabels:
+      app: pulsar-api
+      track: stable
+  template:
+    metadata:
+      labels:
+        app: pulsar-api
+        track: stable
+    spec:
+      containers:
+        - name: pulsar-api
+          image: ghcr.io/deveunicee/pulsar-contracts:stable
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+# ── Canary deployment (1 replica = 5%) ───────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulsar-api-canary
+  namespace: pulsar
+  labels:
+    app: pulsar-api
+    track: canary
+  annotations:
+    # Automatically roll back if error rate exceeds threshold (evaluated by canary-rollback CronJob)
+    canary.pulsar/error-threshold: "5"
+    canary.pulsar/rollback-on-error: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pulsar-api
+      track: canary
+  template:
+    metadata:
+      labels:
+        app: pulsar-api
+        track: canary
+    spec:
+      containers:
+        - name: pulsar-api
+          image: ghcr.io/deveunicee/pulsar-contracts:canary
+          ports:
+            - containerPort: 8080
+          env:
+            - name: CANARY
+              value: "true"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
