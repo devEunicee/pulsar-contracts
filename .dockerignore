@@ -1,0 +1,6 @@
+target/
+.git/
+.github/
+infra/
+logging/
+*.md
