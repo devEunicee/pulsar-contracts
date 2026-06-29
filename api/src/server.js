@@ -1,10 +1,12 @@
 import express from "express";
 import { errorMiddleware } from "./middleware/errors.js";
+import { securityHeaders } from "./middleware/securityHeaders.js";
 import merchantsRouter from "./routes/merchants.js";
 import paymentsRouter from "./routes/payments.js";
 
 const app = express();
 
+app.use(securityHeaders());
 app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
