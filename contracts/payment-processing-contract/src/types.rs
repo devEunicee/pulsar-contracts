@@ -265,6 +265,7 @@ pub enum SubscriptionStatus {
 /// scheduler service MUST call `process_subscription_payment` at each interval
 /// boundary. The contract enforces correctness (idempotency, interval guard,
 /// status checks) but relies on the scheduler for timely invocation.
+///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubscriptionState {
