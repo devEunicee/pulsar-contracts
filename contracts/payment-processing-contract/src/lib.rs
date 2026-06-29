@@ -1280,6 +1280,14 @@ impl PaymentContract {
         if order.expires_at > 0 && now > order.expires_at {
             return Err(PaymentError::PaymentExpired);
         }
+        // Check-Effects-Interactions: mark the payment as executed and persist to
+        // storage BEFORE performing the token transfer. This prevents a re-entrancy
+        // window where a malicious token contract could call back into
+        // execute_multisig_payment before the executed flag was set, allowing
+        // double-execution. Order: check (ms.executed guard above) → effects
+        // (set executed + save) → interactions (token transfer + record creation).
+        ms.executed = true;
+        storage::save_multisig(&env, &ms);
         let token_client = token::Client::new(&env, &order.token);
         let contract_addr = env.current_contract_address();
         token_client.transfer(&contract_addr, &order.merchant_address, &order.amount);
@@ -1301,8 +1309,6 @@ impl PaymentContract {
         storage::push_global_payment_id(&env, &order.order_id);
         storage::increment_payment_stats(&env, order.amount)?;
 
-        ms.executed = true;
-        storage::save_multisig(&env, &ms);
         env.events().publish(
             (String::from_str(&env, "multisig_executed"),),
             (payment_id, executor, order.amount),

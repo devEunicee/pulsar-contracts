@@ -1416,6 +1416,44 @@ fn test_multisig_zero_expires_at_applies_default_expiry() {
     );
 }
 
+// SC-060: execute_multisig_payment must reject a second call with MultisigAlreadyExecuted.
+// The executed flag is persisted BEFORE the token transfer (check-effects-interactions)
+// so re-entrancy cannot bypass the guard.
+#[test]
+fn test_multisig_double_execution_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
+    mint(&env, &token, &signer1, 5000);
+    let order = PaymentOrder {
+        order_id: bytes(&env, "MS_DOUBLE"),
+        merchant_address: merchant.clone(),
+        payer: signer1.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "double execution test"),
+        expires_at: 0,
+    };
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2.clone());
+    client.initiate_multisig_payment(&signer1, &bytes(&env, "MS_DOUBLE"), &order, &signers);
+    client.sign_multisig_payment(&signer1, &bytes(&env, "MS_DOUBLE"));
+    client.sign_multisig_payment(&signer2, &bytes(&env, "MS_DOUBLE"));
+    // First execution succeeds.
+    client.execute_multisig_payment(&signer1, &bytes(&env, "MS_DOUBLE"));
+    // Second execution must be rejected — executed flag was set before the transfer.
+    assert_eq!(
+        client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_DOUBLE")),
+        Err(Ok(PaymentError::MultisigAlreadyExecuted))
+    );
+}
+
 // ── Subscription tests ────────────────────────────────────────────────────────
 
 fn make_plan(env: &Env, token: &Address) -> SubscriptionPlan {
