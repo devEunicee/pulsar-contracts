@@ -113,6 +113,7 @@ impl PaymentContract {
         if storage::get_merchant(&env, &merchant_address).is_some() {
             return Err(PaymentError::MerchantAlreadyRegistered);
         }
+        // .
         if storage::is_whitelist_enabled(&env)
             && !storage::is_whitelisted(&env, &merchant_address)
         {
