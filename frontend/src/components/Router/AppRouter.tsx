@@ -11,6 +11,7 @@
  *   4. Sibling chunks are prefetched after idle so navigation feels instant.
  */
 import React from "react";
+import { ThemeToggle } from "../../theme";
 import { RouteLoadingSkeleton } from "./RouteLoadingSkeleton";
 import { ChunkErrorBoundary } from "./ChunkErrorBoundary";
 
@@ -93,23 +94,29 @@ export function AppRouter() {
 
   return (
     <>
-      {ROUTES.length > 1 && (
-        <nav
-          aria-label="Main navigation"
-          style={{ display: "flex", gap: "1rem", padding: "0.75rem 1.5rem", borderBottom: "1px solid #e5e7eb" }}
-        >
-          {ROUTES.map((r) => (
-            <a
-              key={r.path}
-              href={`#${r.path}`}
-              aria-current={r.path === currentPath ? "page" : undefined}
-              style={{ fontWeight: r.path === currentPath ? 600 : 400 }}
-            >
-              {r.label}
-            </a>
-          ))}
-        </nav>
-      )}
+      <header className="app-header-bar">
+        {ROUTES.length > 1 ? (
+          <nav aria-label="Main navigation" style={{ display: "flex", gap: "1rem" }}>
+            {ROUTES.map((r) => (
+              <a
+                key={r.path}
+                href={`#${r.path}`}
+                aria-current={r.path === currentPath ? "page" : undefined}
+                style={{
+                  fontWeight: r.path === currentPath ? 600 : 400,
+                  color: "var(--color-text)",
+                  textDecoration: "none",
+                }}
+              >
+                {r.label}
+              </a>
+            ))}
+          </nav>
+        ) : (
+          <span className="app-header-bar__title">Pulsar</span>
+        )}
+        <ThemeToggle />
+      </header>
 
       <main>
         <ChunkErrorBoundary>

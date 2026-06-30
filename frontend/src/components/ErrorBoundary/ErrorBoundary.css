@@ -4,21 +4,19 @@
   align-items: center;
   gap: 0.75rem;
   padding: 2rem 1.5rem;
-  border: 1px solid #f87171;
+  border: 1px solid var(--color-error);
   border-radius: 0.5rem;
-  background: #fff1f2;
-  color: #7f1d1d;
+  background: var(--color-error-light);
+  color: var(--color-error-dark);
   max-width: 40rem;
   margin: 2rem auto;
   text-align: center;
 }
 
-@media (prefers-color-scheme: dark) {
-  .eb-container {
-    background: #1f0a0a;
-    border-color: #991b1b;
-    color: #fca5a5;
-  }
+[data-theme="dark"] .eb-container {
+  background: #1f0a0a;
+  border-color: var(--color-error-dark);
+  color: var(--color-error);
 }
 
 .eb-icon { font-size: 2rem; }
@@ -30,12 +28,15 @@
   text-align: left;
   font-size: 0.75rem;
 }
+
 .eb-details summary { cursor: pointer; user-select: none; margin-bottom: 0.5rem; }
+
 .eb-stack {
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  background: #fef2f2;
+  background: var(--color-surface);
+  color: var(--color-text);
   padding: 0.75rem;
   border-radius: 0.25rem;
   font-family: monospace;
@@ -54,8 +55,9 @@
   display: inline-flex;
   align-items: center;
 }
-.eb-btn--primary { background: #dc2626; color: #fff; }
-.eb-btn--primary:hover { background: #b91c1c; }
-.eb-btn--secondary { background: transparent; border-color: #dc2626; color: #dc2626; }
-.eb-btn--secondary:hover { background: #fee2e2; }
+
+.eb-btn--primary { background: var(--color-error); color: var(--color-text-inverse); }
+.eb-btn--primary:hover { background: var(--color-error-dark); }
+.eb-btn--secondary { background: transparent; border-color: var(--color-error); color: var(--color-error); }
+.eb-btn--secondary:hover { background: var(--color-error-light); }
 .eb-btn--ghost { background: transparent; color: inherit; text-decoration: underline; }
