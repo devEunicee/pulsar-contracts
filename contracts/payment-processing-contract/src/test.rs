@@ -228,6 +228,60 @@ fn test_register_contact_info_sanitisation_rejects_control_chars() {
 }
 
 #[test]
+fn test_register_merchant_zero_signing_key_fails() {
+    // SC-040: A merchant must not be able to register with an all-zeros
+    // signing key, as that would cause every subsequent signed payment to
+    // fail at runtime without a meaningful error at registration time.
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    let result = client.try_register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "contact@store.com"),
+        &MerchantCategory::Retail,
+        &Some(zero_key(&env)),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
+fn test_register_merchant_none_signing_key_succeeds() {
+    // Passing None for signing_public_key must still be accepted —
+    // it means the merchant opts out of signature verification.
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "contact@store.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    let m = client.get_merchant(&merchant);
+    assert_eq!(m.signing_public_key, None);
+}
+
+#[test]
+fn test_register_merchant_valid_signing_key_succeeds() {
+    // A non-zero 32-byte key should be accepted and stored correctly.
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    let valid_key = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "contact@store.com"),
+        &MerchantCategory::Retail,
+        &Some(valid_key.clone()),
+    );
+    let m = client.get_merchant(&merchant);
+    assert_eq!(m.signing_public_key, Some(valid_key));
+}
+
+#[test]
 fn test_deactivate_merchant() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
