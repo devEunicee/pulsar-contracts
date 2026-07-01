@@ -264,6 +264,13 @@ impl PaymentContract {
         if !merchant.active {
             return Err(PaymentError::MerchantInactive);
         }
+        // SC-038: Reject payment if the token allowlist is enabled and the
+        // order's token is not on the admin-managed allowlist.
+        if storage::is_token_allowlist_enabled(&env)
+            && !storage::is_token_allowed(&env, &order.token)
+        {
+            return Err(PaymentError::InvalidInput);
+        }
         let stored_key = merchant
             .signing_public_key
             .unwrap_or_else(|| BytesN::from_array(&env, &[0u8; 32]));
@@ -691,6 +698,73 @@ impl PaymentContract {
         // Intentionally disabled: refund state is managed exclusively via the
         // initiate/approve/execute refund workflow.
         Err(PaymentError::InvalidInput)
+    }
+
+    // ── Token allowlist admin (SC-038) ────────────────────────────────────────
+
+    /// Enable or disable the token allowlist enforcement. Admin only.
+    ///
+    /// When enabled, `process_payment_with_signature` will reject payments
+    /// whose token address is not on the allowlist.
+    ///
+    /// # Parameters
+    /// - `admins` — Admin addresses that together satisfy the multi-sig threshold.
+    /// - `enabled` — `true` to enforce the allowlist, `false` to allow any token.
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if the admin multi-sig check fails.
+    pub fn set_token_allowlist_enabled(
+        env: Env,
+        admins: Vec<Address>,
+        enabled: bool,
+    ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
+        helper::require_multi_admin(&env, admins)?;
+        storage::set_token_allowlist_enabled(&env, enabled);
+        Ok(())
+    }
+
+    /// Add a token to the allowlist. Admin only.
+    ///
+    /// The token can be used in payments when allowlist enforcement is active.
+    ///
+    /// # Parameters
+    /// - `admins` — Admin addresses that together satisfy the multi-sig threshold.
+    /// - `token` — The token contract address to allow.
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if the admin multi-sig check fails.
+    pub fn add_allowed_token(
+        env: Env,
+        admins: Vec<Address>,
+        token: Address,
+    ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
+        helper::require_multi_admin(&env, admins)?;
+        storage::set_token_allowed(&env, &token, true);
+        Ok(())
+    }
+
+    /// Remove a token from the allowlist. Admin only.
+    ///
+    /// After removal, payments using this token will be rejected when
+    /// allowlist enforcement is active.
+    ///
+    /// # Parameters
+    /// - `admins` — Admin addresses that together satisfy the multi-sig threshold.
+    /// - `token` — The token contract address to remove from the allowlist.
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if the admin multi-sig check fails.
+    pub fn remove_allowed_token(
+        env: Env,
+        admins: Vec<Address>,
+        token: Address,
+    ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
+        helper::require_multi_admin(&env, admins)?;
+        storage::set_token_allowed(&env, &token, false);
+        Ok(())
     }
 
     /// Permanently remove a payment record from storage. Admin only.

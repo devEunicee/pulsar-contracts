@@ -425,6 +425,120 @@ fn test_global_stats_overflow_fails() {
     );
 }
 
+// ── Token allowlist tests (SC-038) ───────────────────────────────────────────
+
+/// When the token allowlist is disabled (default), any token is accepted.
+#[test]
+fn test_payment_allowlist_disabled_allows_any_token() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &payer, 5000);
+    // Allowlist is NOT enabled — any token should pass.
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (_pk, sig) = sign_order(&env, &order);
+    client.process_payment_with_signature(&payer, &order, &sig, &zero_key(&env));
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.amount, 1000);
+}
+
+/// When the allowlist is enabled and the token is on the list, payment succeeds.
+#[test]
+fn test_payment_allowlist_enabled_allowed_token_succeeds() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &payer, 5000);
+    // Enable the allowlist and add the token.
+    client.set_token_allowlist_enabled(&admins(&env, &admin), &true);
+    client.add_allowed_token(&admins(&env, &admin), &token);
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (_pk, sig) = sign_order(&env, &order);
+    client.process_payment_with_signature(&payer, &order, &sig, &zero_key(&env));
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.amount, 1000);
+}
+
+/// When the allowlist is enabled and the token is NOT on the list, payment is rejected.
+#[test]
+fn test_payment_allowlist_enabled_disallowed_token_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &payer, 5000);
+    // Enable the allowlist but do NOT add the token.
+    client.set_token_allowlist_enabled(&admins(&env, &admin), &true);
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (_pk, sig) = sign_order(&env, &order);
+    assert_eq!(
+        client.try_process_payment_with_signature(&payer, &order, &sig, &zero_key(&env)),
+        Err(Ok(PaymentError::InvalidInput))
+    );
+}
+
+/// After remove_allowed_token the token is rejected even if it was previously allowed.
+#[test]
+fn test_payment_remove_allowed_token_then_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &payer, 5000);
+    client.set_token_allowlist_enabled(&admins(&env, &admin), &true);
+    client.add_allowed_token(&admins(&env, &admin), &token);
+    // Remove the token from the allowlist.
+    client.remove_allowed_token(&admins(&env, &admin), &token);
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (_pk, sig) = sign_order(&env, &order);
+    assert_eq!(
+        client.try_process_payment_with_signature(&payer, &order, &sig, &zero_key(&env)),
+        Err(Ok(PaymentError::InvalidInput))
+    );
+}
+
 // ── Refund tests ──────────────────────────────────────────────────────────────
 
 fn setup_paid_order(env: &Env, client: &PaymentContractClient) -> (Address, Address, Address, Address) {
