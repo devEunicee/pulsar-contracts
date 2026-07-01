@@ -3,6 +3,7 @@ import { useWallet } from './hooks/useWallet';
 import PaymentHistory from './components/PaymentHistory';
 import RefundManager from './components/RefundManager';
 import MerchantProfile from './components/MerchantProfile';
+import { ThemeToggle } from './theme/ThemeToggle';
 import './App.css';
 
 const TABS = ['Payments', 'Refunds', 'Profile'];
@@ -15,14 +16,17 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>Pulsar Merchant Dashboard</h1>
-        {publicKey ? (
-          <div className="wallet-info">
-            <span title={publicKey}>{publicKey.slice(0, 8)}…{publicKey.slice(-4)}</span>
-            <button onClick={disconnect}>Disconnect</button>
-          </div>
-        ) : (
-          <button onClick={connect}>Connect Freighter</button>
-        )}
+        <div className="app-header-actions">
+          <ThemeToggle />
+          {publicKey ? (
+            <div className="wallet-info">
+              <span title={publicKey}>{publicKey.slice(0, 8)}…{publicKey.slice(-4)}</span>
+              <button onClick={disconnect}>Disconnect</button>
+            </div>
+          ) : (
+            <button onClick={connect}>Connect Freighter</button>
+          )}
+        </div>
       </header>
 
       {error && <p role="alert" className="error">{error}</p>}
