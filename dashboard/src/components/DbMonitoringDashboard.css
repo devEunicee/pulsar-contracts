@@ -1,0 +1,282 @@
+/* DbMonitoringDashboard.css — Styles for the database monitoring dashboard (#307) */
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+
+.db-dashboard {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  color: var(--color-text, #1a1a2e);
+  background: var(--color-bg, #f8f9fb);
+  padding: 1.5rem;
+  min-height: 100vh;
+}
+
+.db-dashboard__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--color-border, #e2e8f0);
+}
+
+.db-dashboard__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.db-dashboard__meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+.db-dashboard__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr));
+  gap: 1.25rem;
+}
+
+.db-dashboard__footer {
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #64748b);
+  text-align: right;
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+
+.db-card {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.db-card__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted, #64748b);
+  margin: 0 0 1rem 0;
+}
+
+.db-card__body {
+  overflow: auto;
+}
+
+/* ── Badges ──────────────────────────────────────────────────────────────── */
+
+.db-connections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.db-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--color-bg, #f8f9fb);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  min-width: 5rem;
+}
+
+.db-badge__label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted, #64748b);
+}
+
+.db-badge__value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.db-badge--ok    { border-color: #22c55e; }
+.db-badge--warn  { border-color: #f59e0b; background: #fffbeb; }
+.db-badge--error { border-color: #ef4444; background: #fef2f2; }
+
+/* ── Stats grid ──────────────────────────────────────────────────────────── */
+
+.db-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.75rem;
+}
+
+.db-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.875rem;
+}
+
+.db-stat strong {
+  font-size: 1.1rem;
+}
+
+.db-text--warn {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+/* ── Status dot ──────────────────────────────────────────────────────────── */
+
+.db-status-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  margin-right: 0.3rem;
+  vertical-align: middle;
+}
+
+.db-status-dot--ok   { background: #22c55e; }
+.db-status-dot--warn { background: #f59e0b; }
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+
+.db-table-wrapper {
+  overflow-x: auto;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.db-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.db-table th {
+  position: sticky;
+  top: 0;
+  background: var(--color-surface, #fff);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 2px solid var(--color-border, #e2e8f0);
+  white-space: nowrap;
+}
+
+.db-table td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  vertical-align: top;
+  max-width: 30rem;
+}
+
+.db-table tr:last-child td {
+  border-bottom: none;
+}
+
+.db-table__row--warn {
+  background: #fffbeb;
+}
+
+.db-code {
+  font-family: var(--font-mono, 'Menlo', 'Consolas', monospace);
+  font-size: 0.78em;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+/* ── Alerts ──────────────────────────────────────────────────────────────── */
+
+.db-alerts-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.db-alert-item {
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.db-alert-item__type {
+  font-weight: 700;
+  margin-right: 0.5rem;
+  color: #b45309;
+}
+
+.db-alert-item__time {
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.75rem;
+}
+
+.db-alert-item__data {
+  margin: 0.3rem 0 0;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--font-mono, monospace);
+}
+
+/* ── Utility ─────────────────────────────────────────────────────────────── */
+
+.db-empty {
+  color: var(--color-text-muted, #64748b);
+  font-style: italic;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.db-error {
+  background: #fef2f2;
+  border: 1px solid #ef4444;
+  color: #b91c1c;
+  border-radius: 0.4rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.db-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.db-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.db-btn--secondary {
+  background: var(--color-bg, #f8f9fb);
+  border-color: var(--color-border, #e2e8f0);
+  color: var(--color-text, #1a1a2e);
+}
+
+.db-btn--secondary:hover:not(:disabled) {
+  background: var(--color-border, #e2e8f0);
+}

@@ -4,6 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pulsar Merchant Dashboard</title>
+    <script>
+      (function () {
+        var stored = localStorage.getItem('pulsar-theme');
+        var theme =
+          stored === 'light' || stored === 'dark'
+            ? stored
+            : window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

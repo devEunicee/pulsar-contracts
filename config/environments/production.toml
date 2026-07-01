@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: MIT
+#
+# Production environment configuration for Pulsar.
+# Targets Stellar mainnet with high-availability setup.
+#
+# IMPORTANT: All secrets MUST be supplied via environment variables or a
+# secrets manager (e.g., AWS Secrets Manager, HashiCorp Vault).
+# Never commit actual keys or secrets to this file.
+
+[network]
+name = "public"
+rpc_url = "https://soroban-mainnet.stellar.org"
+horizon_url = "https://horizon.stellar.org"
+passphrase = "Public Global Stellar Network ; September 2015"
+
+[contract]
+# Deployed mainnet contract address.
+# Set via PROD_CONTRACT_ID env var in CI/CD pipeline.
+# id = ""
+
+[admin]
+account = "prod-admin"
+# Secret loaded from PROD_ADMIN_SECRET env var (never hardcode)
+
+[token]
+account = "prod-token-issuer"
+code = "USDC"
+# No automatic minting in production — token supply managed separately
+
+[merchants]
+count = 0          # no auto-seeding in production
+categories = []
+name_prefix = ""
+
+[payments]
+count = 0          # no auto-seeding in production
+
+[refunds]
+count = 0
+
+[payer]
+account = ""       # payers self-managed in production
+
+[logging]
+level = "warn"
+verbose = false
+# Ship logs to your log aggregation service (e.g., CloudWatch, Datadog)
+# endpoint set via LOG_ENDPOINT env var
+
+[monitoring]
+enabled = true
+# Production monitoring — set MONITORING_ENDPOINT env var
+alert_on_failed_payments = true
+alert_threshold_consecutive_failures = 1   # alert immediately in production
+# PagerDuty / OpsGenie integration key set via ALERTING_KEY env var
+uptime_check_interval_seconds = 60
+
+[backup]
+enabled = true
+# Backup to production S3 bucket — set BACKUP_BUCKET env var
+schedule = "0 1 * * *"    # daily at 01:00 UTC
+retention_days = 90
+# Point-in-time recovery: replicate to a second region
+cross_region_replication = true
+
+[dns]
+# Production API gateway domain
+# api_domain = "api.yourapp.com"
+# TLS certificate managed via ACM or Let's Encrypt
+# tls_cert_arn set via TLS_CERT_ARN env var
+
+[high_availability]
+# Deploy behind a load balancer with at least 2 RPC nodes
+min_rpc_nodes = 2
+# Automatic failover to backup RPC endpoint on error
+# backup_rpc_url set via BACKUP_RPC_URL env var
+failover_enabled = true

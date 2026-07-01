@@ -5,11 +5,14 @@
   "main": "src/monitor.js",
   "scripts": {
     "start": "node src/monitor.js",
-    "test": "node --test src/monitor.test.js"
+    "start:dashboard": "node src/dashboard-server.js",
+    "test": "node --test src/monitor.test.js",
+    "test:db": "node --test src/db-metrics.test.js"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "12.3.0",
-    "node-fetch": "3.3.2"
+    "node-fetch": "3.3.2",
+    "pg": "8.13.3"
   },
   "engines": {
     "node": ">=18.0.0"

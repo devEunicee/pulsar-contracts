@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: MIT
+#
+# Development environment configuration for Pulsar.
+# Targets a local Docker-based Stellar network.
+# Run: docker compose up -d  before using this config.
+
+[network]
+name = "local"
+rpc_url = "http://localhost:8000"
+horizon_url = "http://localhost:8000"
+passphrase = "Standalone Network ; February 2017"
+
+[contract]
+# Set CONTRACT_ID env var after deploying:
+#   export CONTRACT_ID=$(stellar contract deploy ...)
+# id = ""
+
+[admin]
+account = "admin"
+# secret_key loaded from ADMIN_SECRET_KEY env var at runtime
+
+[token]
+account = "token_issuer"
+code = "USDC"
+mint_amount = 10000000   # 10M stroops — plenty for local testing
+
+[merchants]
+count = 3
+categories = ["Retail", "Food", "Services"]
+name_prefix = "Dev Merchant"
+
+[payments]
+count = 20
+amount_min = 100000
+amount_max = 1000000
+description_prefix = "Dev payment"
+
+[refunds]
+count = 5
+amount_percentage = 50
+reason = "Dev refund test"
+
+[payer]
+account = "payer"
+initial_balance = 50000000
+
+[logging]
+level = "debug"
+verbose = true
+
+[monitoring]
+enabled = false   # no external monitoring in local dev
+
+[backup]
+enabled = false   # no backup needed for local dev data
