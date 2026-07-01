@@ -118,6 +118,26 @@ pub fn validate_merchant_fields(
     Ok(())
 }
 
+/// Validate an optional ed25519 signing public key supplied during merchant
+/// registration.
+///
+/// Only a basic structural check is performed on-chain: if a key is provided
+/// it must not be the all-zeros value, which is the canonical representation
+/// of an unset/invalid key. A non-zero 32-byte value is accepted without
+/// further cryptographic verification — confirming that the bytes actually
+/// form a valid point on the ed25519 curve is computationally expensive and
+/// not enforced here. Integrators should verify key validity off-chain before
+/// registration.
+pub fn validate_signing_public_key(key: &Option<BytesN<32>>, env: &Env) -> Result<(), PaymentError> {
+    if let Some(k) = key {
+        let zero = BytesN::from_array(env, &[0u8; 32]);
+        if *k == zero {
+            return Err(PaymentError::InvalidInput);
+        }
+    }
+    Ok(())
+}
+
 /// Validate that `order_id` is non-empty.
 pub fn validate_order_id(order_id: &Bytes) -> Result<(), PaymentError> {
     // Enforce non-empty, max 64 bytes
@@ -190,29 +210,6 @@ pub fn matches_filter(record: &PaymentRecord, filter: &PaymentFilter) -> bool {
         }
     }
     true
-}
-
-/// Require that at least one address in `admins` matches the stored admin config.
-pub fn require_multi_admin(env: &Env, admins: Vec<Address>) -> Result<(), PaymentError> {
-    if let Some(config) = storage::get_admin_config(env) {
-        for addr in admins.iter() {
-            if config.admins.contains(&addr) {
-                addr.require_auth();
-                return Ok(());
-            }
-        }
-        return Err(PaymentError::Unauthorized);
-    }
-    // Fall back to single-admin mode.
-    if let Some(admin) = storage::get_admin(env) {
-        for addr in admins.iter() {
-            if addr == admin {
-                addr.require_auth();
-                return Ok(());
-            }
-        }
-    }
-    Err(PaymentError::Unauthorized)
 }
 
 /// Returns true if `ts` falls within the optional [start, end] range.

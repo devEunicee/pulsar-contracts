@@ -91,29 +91,10 @@ pub struct RefundRecord {
     pub status: RefundStatus,
     pub initiated_by: Address,
     pub initiated_at: u64,
+    /// Latest ledger timestamp at which an admin may resolve a dispute.
+    pub dispute_deadline: u64,
     /// Set when the payer disputes a merchant rejection. Empty string if not disputed.
     pub dispute_reason: String,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SubscriptionStatus {
-    Active,
-    Cancelled,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubscriptionPlan {
-    pub subscription_id: Bytes,
-    pub merchant_address: Address,
-    pub payer: Address,
-    pub token: Address,
-    pub amount: i128,
-    pub interval_seconds: u64,
-    pub next_payment_at: u64,
-    pub status: SubscriptionStatus,
-    pub created_at: u64,
 }
 
 // ── Multisig ──────────────────────────────────────────────────────────────────
@@ -128,27 +109,6 @@ pub struct MultisigPayment {
     pub executed: bool,
     pub expires_at: u64,
     pub created_at: u64,
-}
-
-// ── Subscriptions ───────────────────────────────────────────────────────────
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubscriptionState {
-    pub subscription_id: Bytes,
-    pub merchant_address: Address,
-    pub subscriber: Address,
-    pub active: bool,
-    pub created_at: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SubscriptionPage {
-    pub records: Vec<SubscriptionState>,
-    /// Opaque pagination cursor pointing to the last returned subscription id.
-    pub next_cursor: Option<Bytes>,
-    pub total: u32,
 }
 
 // ── Query helpers ─────────────────────────────────────────────────────────────
@@ -265,6 +225,7 @@ pub enum SubscriptionStatus {
 /// scheduler service MUST call `process_subscription_payment` at each interval
 /// boundary. The contract enforces correctness (idempotency, interval guard,
 /// status checks) but relies on the scheduler for timely invocation.
+///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubscriptionState {
