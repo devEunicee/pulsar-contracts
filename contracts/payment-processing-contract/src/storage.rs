@@ -198,43 +198,6 @@ pub fn set_global_payment_ids(env: &Env, ids: &Vec<Bytes>) {
         .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
 }
 
-pub fn remove_merchant_payment_id(env: &Env, merchant: &Address, order_id: &Bytes) {
-    let ids = get_merchant_payment_ids(env, merchant);
-    let mut new_ids = Vec::new(env);
-    for id in ids.iter() {
-        if id != *order_id {
-            new_ids.push_back(id);
-        }
-    }
-    env.storage()
-        .persistent()
-        .set(&DataKey::MerchantPayments(merchant.clone()), &new_ids);
-}
-
-pub fn remove_payer_payment_id(env: &Env, payer: &Address, order_id: &Bytes) {
-    let ids = get_payer_payment_ids(env, payer);
-    let mut new_ids = Vec::new(env);
-    for id in ids.iter() {
-        if id != *order_id {
-            new_ids.push_back(id);
-        }
-    }
-    env.storage()
-        .persistent()
-        .set(&DataKey::PayerPayments(payer.clone()), &new_ids);
-}
-
-pub fn remove_global_payment_id(env: &Env, order_id: &Bytes) {
-    let ids = get_global_payment_ids(env);
-    let mut new_ids = Vec::new(env);
-    for id in ids.iter() {
-        if id != *order_id {
-            new_ids.push_back(id);
-        }
-    }
-    set_global_payment_ids(env, &new_ids);
-}
-
 fn remove_id_from_list(env: &Env, list: Vec<Bytes>, target: &Bytes) -> Vec<Bytes> {
     let mut new_list = Vec::new(env);
     for id in list.iter() {
@@ -292,18 +255,6 @@ pub fn save_refund(env: &Env, refund: &RefundRecord) {
     env.storage()
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_LEDGERS);
-}
-
-pub fn get_subscription(env: &Env, subscription_id: &Bytes) -> Option<SubscriptionPlan> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Subscription(subscription_id.clone()))
-}
-
-pub fn save_subscription(env: &Env, subscription: &SubscriptionPlan) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::Subscription(subscription.subscription_id.clone()), subscription);
 }
 
 pub fn get_all_refund_ids(env: &Env) -> Vec<Bytes> {
@@ -452,6 +403,9 @@ pub const REFUND_WINDOW: u64 = 2_592_000;
 /// ledger whose `close_time` is a few seconds past the nominal deadline). It
 /// does not meaningfully extend the 30-day window from a user perspective.
 pub const REFUND_GRACE_BUFFER: u64 = 3_600;
+
+/// Window after the refund deadline during which a payer may dispute a rejection.
+pub const DISPUTE_WINDOW: u64 = 604_800;
 
 /// Default multisig expiry: 24 hours in seconds
 pub const DEFAULT_MULTISIG_EXPIRY: u64 = 86_400;

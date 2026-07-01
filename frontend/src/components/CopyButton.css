@@ -20,16 +20,15 @@
 }
 
 .copy-button--copied {
-  color: #16a34a;
-  border-color: #16a34a;
+  color: var(--color-success);
+  border-color: var(--color-success);
 }
 
 .copy-button--error {
-  color: #dc2626;
-  border-color: #dc2626;
+  color: var(--color-error);
+  border-color: var(--color-error);
 }
 
-/* Visually hide but keep accessible */
 .sr-only {
   position: absolute;
   width: 1px;
