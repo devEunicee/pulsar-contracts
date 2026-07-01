@@ -194,6 +194,40 @@ impl PaymentContract {
         Ok(())
     }
 
+    /// Reactivate a previously deactivated merchant. Admin only.
+    ///
+    /// Restores a deactivated merchant's `active` flag to `true` so they can
+    /// receive payments again without requiring re-registration.
+    ///
+    /// # Parameters
+    /// - `caller` — An admin address that satisfies the multi-sig threshold.
+    /// - `merchant_address` — The address of the merchant to reactivate.
+    ///
+    /// # Errors
+    /// - [`PaymentError::Unauthorized`] if `caller` does not satisfy the admin
+    ///   multi-sig threshold.
+    /// - [`PaymentError::MerchantNotFound`] if no merchant is registered at
+    ///   `merchant_address`.
+    pub fn reactivate_merchant(
+        env: Env,
+        caller: Address,
+        merchant_address: Address,
+    ) -> Result<(), PaymentError> {
+        storage::bump_instance_ttl(&env);
+        let mut admin_vec = Vec::new(&env);
+        admin_vec.push_back(caller);
+        helper::require_multi_admin(&env, admin_vec)?;
+        let mut merchant =
+            storage::get_merchant(&env, &merchant_address).ok_or(PaymentError::MerchantNotFound)?;
+        merchant.active = true;
+        storage::save_merchant(&env, &merchant);
+        env.events().publish(
+            (String::from_str(&env, "merchant_reactivated"),),
+            merchant_address,
+        );
+        Ok(())
+    }
+
     /// Retrieve a merchant's profile by address.
     ///
     /// # Parameters

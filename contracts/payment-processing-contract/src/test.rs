@@ -292,6 +292,63 @@ fn test_deactivate_merchant() {
     assert!(!client.get_merchant(&merchant).active);
 }
 
+// ── reactivate_merchant tests ─────────────────────────────────────────────────
+
+#[test]
+fn test_reactivate_merchant_success() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    // Deactivate first, then reactivate.
+    client.deactivate_merchant(&merchant, &Some(admins(&env, &admin)));
+    assert!(!client.get_merchant(&merchant).active);
+
+    client.reactivate_merchant(&admin, &merchant);
+    assert!(client.get_merchant(&merchant).active);
+}
+
+#[test]
+fn test_reactivate_merchant_not_found() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let non_existent = Address::generate(&env);
+    client.set_admin(&admins(&env, &admin), &1);
+
+    let result = client.try_reactivate_merchant(&admin, &non_existent);
+    assert_eq!(result, Err(Ok(PaymentError::MerchantNotFound)));
+}
+
+#[test]
+fn test_reactivate_merchant_non_admin_rejected() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    client.deactivate_merchant(&merchant, &Some(admins(&env, &admin)));
+
+    // A non-admin caller should be rejected.
+    let result = client.try_reactivate_merchant(&non_admin, &merchant);
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
 // ── update_merchant tests ─────────────────────────────────────────────────────
 
 #[test]
