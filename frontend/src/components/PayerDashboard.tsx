@@ -39,7 +39,6 @@ export function PayerDashboard() {
     [address, filter, sortField, sortOrder]
   );
 
-  // Reload from page 0 whenever filters/sort change
   useEffect(() => {
     setCursorStack([null]);
     setCurrentPage(0);
@@ -63,24 +62,33 @@ export function PayerDashboard() {
   };
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
-      <h1 style={{ marginBottom: 4 }}>Pulsar — Payer Dashboard</h1>
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24, fontFamily: "var(--font-family-sans, system-ui, sans-serif)" }}>
+      <h1 style={{ marginBottom: 4, color: "var(--color-text)" }}>Pulsar — Payer Dashboard</h1>
 
       {!address ? (
         <div>
-          <p style={{ color: "#64748b" }}>Connect your Freighter wallet to view your payment history.</p>
-          <button onClick={connect} style={btnStyle("#6366f1")}>
+          <p style={{ color: "var(--color-text-muted)" }}>Connect your Freighter wallet to view your payment history.</p>
+          <button onClick={connect} style={btnStyle("var(--color-primary)")}>
             Connect Freighter
           </button>
-          {walletError && <p style={{ color: "#ef4444" }}>{walletError}</p>}
+          {walletError && <p style={{ color: "var(--color-error)" }}>{walletError}</p>}
         </div>
       ) : (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-            <span style={{ fontFamily: "monospace", background: "#f1f5f9", padding: "4px 10px", borderRadius: 6 }}>
+            <span
+              style={{
+                fontFamily: "monospace",
+                background: "var(--color-surface)",
+                color: "var(--color-text)",
+                padding: "4px 10px",
+                borderRadius: 6,
+                border: "1px solid var(--color-border)",
+              }}
+            >
               {address.slice(0, 8)}…{address.slice(-4)}
             </span>
-            <button onClick={disconnect} style={btnStyle("#94a3b8")}>
+            <button onClick={disconnect} style={btnStyle("var(--color-text-muted)")}>
               Disconnect
             </button>
           </div>
@@ -94,16 +102,16 @@ export function PayerDashboard() {
             onSortOrder={setSortOrder}
           />
 
-          {fetchError && <p style={{ color: "#ef4444" }}>{fetchError}</p>}
+          {fetchError && <p style={{ color: "var(--color-error)" }}>{fetchError}</p>}
 
           <PaymentTable records={records} loading={loading} />
 
           <div style={{ display: "flex", gap: 12, marginTop: 16, alignItems: "center" }}>
-            <button onClick={goPrev} disabled={currentPage === 0} style={btnStyle("#64748b")}>
+            <button onClick={goPrev} disabled={currentPage === 0} style={btnStyle("var(--color-text-muted)")}>
               ← Previous
             </button>
-            <span style={{ color: "#64748b" }}>Page {currentPage + 1}</span>
-            <button onClick={goNext} disabled={!nextCursor} style={btnStyle("#6366f1")}>
+            <span style={{ color: "var(--color-text-muted)" }}>Page {currentPage + 1}</span>
+            <button onClick={goNext} disabled={!nextCursor} style={btnStyle("var(--color-primary)")}>
               Next →
             </button>
           </div>
@@ -116,7 +124,7 @@ export function PayerDashboard() {
 function btnStyle(bg: string): React.CSSProperties {
   return {
     background: bg,
-    color: "#fff",
+    color: "var(--color-text-inverse, #fff)",
     border: "none",
     borderRadius: 6,
     padding: "8px 16px",

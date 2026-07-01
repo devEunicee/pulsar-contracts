@@ -7,21 +7,29 @@ interface Props {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  Completed: "#22c55e",
-  PartiallyRefunded: "#f59e0b",
-  FullyRefunded: "#3b82f6",
+  Completed: "var(--color-success)",
+  PartiallyRefunded: "var(--color-warning)",
+  FullyRefunded: "var(--color-info)",
 };
 
 export function PaymentTable({ records, loading }: Props) {
-  if (loading) return <p>Loading…</p>;
-  if (!records.length) return <p>No payments found.</p>;
+  if (loading) return <p style={{ color: "var(--color-text-muted)" }}>Loading…</p>;
+  if (!records.length) return <p style={{ color: "var(--color-text-muted)" }}>No payments found.</p>;
 
   return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, color: "var(--color-text)" }}>
       <thead>
-        <tr style={{ background: "#f1f5f9" }}>
+        <tr style={{ background: "var(--color-surface)" }}>
           {["Order ID", "Merchant", "Token", "Amount", "Date", "Status"].map((h) => (
-            <th key={h} style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>
+            <th
+              key={h}
+              style={{
+                padding: "8px 12px",
+                textAlign: "left",
+                borderBottom: "1px solid var(--color-border)",
+                color: "var(--color-text)",
+              }}
+            >
               {h}
             </th>
           ))}
@@ -29,7 +37,7 @@ export function PaymentTable({ records, loading }: Props) {
       </thead>
       <tbody>
         {records.map((r) => (
-          <tr key={r.order_id} style={{ borderBottom: "1px solid #e2e8f0" }}>
+          <tr key={r.order_id} style={{ borderBottom: "1px solid var(--color-border)" }}>
             <td style={{ padding: "8px 12px", fontFamily: "monospace" }}>{r.order_id}</td>
             <td style={{ padding: "8px 12px", fontFamily: "monospace" }}>
               {r.merchant_address.slice(0, 8)}…{r.merchant_address.slice(-4)}
@@ -42,7 +50,7 @@ export function PaymentTable({ records, loading }: Props) {
               {new Date(r.paid_at * 1000).toLocaleString()}
             </td>
             <td style={{ padding: "8px 12px" }}>
-              <span style={{ color: STATUS_COLOR[r.status] ?? "#64748b", fontWeight: 600 }}>
+              <span style={{ color: STATUS_COLOR[r.status] ?? "var(--color-text-muted)", fontWeight: 600 }}>
                 {r.status}
               </span>
             </td>

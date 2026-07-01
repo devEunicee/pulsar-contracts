@@ -228,6 +228,60 @@ fn test_register_contact_info_sanitisation_rejects_control_chars() {
 }
 
 #[test]
+fn test_register_merchant_zero_signing_key_fails() {
+    // SC-040: A merchant must not be able to register with an all-zeros
+    // signing key, as that would cause every subsequent signed payment to
+    // fail at runtime without a meaningful error at registration time.
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    let result = client.try_register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "contact@store.com"),
+        &MerchantCategory::Retail,
+        &Some(zero_key(&env)),
+    );
+    assert_eq!(result, Err(Ok(PaymentError::InvalidInput)));
+}
+
+#[test]
+fn test_register_merchant_none_signing_key_succeeds() {
+    // Passing None for signing_public_key must still be accepted —
+    // it means the merchant opts out of signature verification.
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "contact@store.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    let m = client.get_merchant(&merchant);
+    assert_eq!(m.signing_public_key, None);
+}
+
+#[test]
+fn test_register_merchant_valid_signing_key_succeeds() {
+    // A non-zero 32-byte key should be accepted and stored correctly.
+    let (env, client) = setup();
+    let merchant = Address::generate(&env);
+    let valid_key = BytesN::from_array(&env, &[1u8; 32]);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "contact@store.com"),
+        &MerchantCategory::Retail,
+        &Some(valid_key.clone()),
+    );
+    let m = client.get_merchant(&merchant);
+    assert_eq!(m.signing_public_key, Some(valid_key));
+}
+
+#[test]
 fn test_deactivate_merchant() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
@@ -236,6 +290,63 @@ fn test_deactivate_merchant() {
     client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
     client.deactivate_merchant(&merchant, &Some(admins(&env, &admin)));
     assert!(!client.get_merchant(&merchant).active);
+}
+
+// ── reactivate_merchant tests ─────────────────────────────────────────────────
+
+#[test]
+fn test_reactivate_merchant_success() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    // Deactivate first, then reactivate.
+    client.deactivate_merchant(&merchant, &Some(admins(&env, &admin)));
+    assert!(!client.get_merchant(&merchant).active);
+
+    client.reactivate_merchant(&admin, &merchant);
+    assert!(client.get_merchant(&merchant).active);
+}
+
+#[test]
+fn test_reactivate_merchant_not_found() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let non_existent = Address::generate(&env);
+    client.set_admin(&admins(&env, &admin), &1);
+
+    let result = client.try_reactivate_merchant(&admin, &non_existent);
+    assert_eq!(result, Err(Ok(PaymentError::MerchantNotFound)));
+}
+
+#[test]
+fn test_reactivate_merchant_non_admin_rejected() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    client.deactivate_merchant(&merchant, &Some(admins(&env, &admin)));
+
+    // A non-admin caller should be rejected.
+    let result = client.try_reactivate_merchant(&non_admin, &merchant);
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
 }
 
 // ── update_merchant tests ─────────────────────────────────────────────────────
@@ -422,6 +533,120 @@ fn test_global_stats_overflow_fails() {
     assert_eq!(
         client.try_process_payment_with_signature(&payer, &order, &sig2, &zero_key(&env)),
         Err(Ok(PaymentError::ArithmeticError))
+    );
+}
+
+// ── Token allowlist tests (SC-038) ───────────────────────────────────────────
+
+/// When the token allowlist is disabled (default), any token is accepted.
+#[test]
+fn test_payment_allowlist_disabled_allows_any_token() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &payer, 5000);
+    // Allowlist is NOT enabled — any token should pass.
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (_pk, sig) = sign_order(&env, &order);
+    client.process_payment_with_signature(&payer, &order, &sig, &zero_key(&env));
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.amount, 1000);
+}
+
+/// When the allowlist is enabled and the token is on the list, payment succeeds.
+#[test]
+fn test_payment_allowlist_enabled_allowed_token_succeeds() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &payer, 5000);
+    // Enable the allowlist and add the token.
+    client.set_token_allowlist_enabled(&admins(&env, &admin), &true);
+    client.add_allowed_token(&admins(&env, &admin), &token);
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (_pk, sig) = sign_order(&env, &order);
+    client.process_payment_with_signature(&payer, &order, &sig, &zero_key(&env));
+    let record = client.get_payment_by_id(&payer, &bytes(&env, "ORDER_001"));
+    assert_eq!(record.amount, 1000);
+}
+
+/// When the allowlist is enabled and the token is NOT on the list, payment is rejected.
+#[test]
+fn test_payment_allowlist_enabled_disallowed_token_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &payer, 5000);
+    // Enable the allowlist but do NOT add the token.
+    client.set_token_allowlist_enabled(&admins(&env, &admin), &true);
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (_pk, sig) = sign_order(&env, &order);
+    assert_eq!(
+        client.try_process_payment_with_signature(&payer, &order, &sig, &zero_key(&env)),
+        Err(Ok(PaymentError::InvalidInput))
+    );
+}
+
+/// After remove_allowed_token the token is rejected even if it was previously allowed.
+#[test]
+fn test_payment_remove_allowed_token_then_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(
+        &merchant,
+        &str(&env, "Store"),
+        &str(&env, "desc"),
+        &str(&env, "c@c.com"),
+        &MerchantCategory::Retail,
+        &None,
+    );
+    mint(&env, &token, &payer, 5000);
+    client.set_token_allowlist_enabled(&admins(&env, &admin), &true);
+    client.add_allowed_token(&admins(&env, &admin), &token);
+    // Remove the token from the allowlist.
+    client.remove_allowed_token(&admins(&env, &admin), &token);
+    let order = make_order(&env, &merchant, &payer, &token);
+    let (_pk, sig) = sign_order(&env, &order);
+    assert_eq!(
+        client.try_process_payment_with_signature(&payer, &order, &sig, &zero_key(&env)),
+        Err(Ok(PaymentError::InvalidInput))
     );
 }
 
@@ -1413,6 +1638,44 @@ fn test_multisig_zero_expires_at_applies_default_expiry() {
     assert_eq!(
         client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_ZERO_EXP")),
         Err(Ok(PaymentError::PaymentExpired))
+    );
+}
+
+// SC-060: execute_multisig_payment must reject a second call with MultisigAlreadyExecuted.
+// The executed flag is persisted BEFORE the token transfer (check-effects-interactions)
+// so re-entrancy cannot bypass the guard.
+#[test]
+fn test_multisig_double_execution_fails() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let token = create_token(&env, &admin);
+    client.set_admin(&admins(&env, &admin), &1);
+    client.register_merchant(&merchant, &str(&env, "Store"), &str(&env, "desc"), &str(&env, "c@c.com"), &MerchantCategory::Retail, &None);
+    mint(&env, &token, &signer1, 5000);
+    let order = PaymentOrder {
+        order_id: bytes(&env, "MS_DOUBLE"),
+        merchant_address: merchant.clone(),
+        payer: signer1.clone(),
+        token: token.clone(),
+        amount: 1000,
+        description: str(&env, "double execution test"),
+        expires_at: 0,
+    };
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2.clone());
+    client.initiate_multisig_payment(&signer1, &bytes(&env, "MS_DOUBLE"), &order, &signers);
+    client.sign_multisig_payment(&signer1, &bytes(&env, "MS_DOUBLE"));
+    client.sign_multisig_payment(&signer2, &bytes(&env, "MS_DOUBLE"));
+    // First execution succeeds.
+    client.execute_multisig_payment(&signer1, &bytes(&env, "MS_DOUBLE"));
+    // Second execution must be rejected — executed flag was set before the transfer.
+    assert_eq!(
+        client.try_execute_multisig_payment(&signer1, &bytes(&env, "MS_DOUBLE")),
+        Err(Ok(PaymentError::MultisigAlreadyExecuted))
     );
 }
 

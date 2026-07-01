@@ -10,22 +10,17 @@
 }
 
 .cd-dialog {
-  background: #fff;
+  background: var(--color-bg);
+  color: var(--color-text);
   border-radius: 0.5rem;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-2xl);
   width: 100%;
   max-width: 28rem;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-@media (prefers-color-scheme: dark) {
-  .cd-dialog {
-    background: #1e1e2e;
-    color: #cdd6f4;
-  }
+  border: 1px solid var(--color-border);
 }
 
 .cd-header {
@@ -34,13 +29,13 @@
   gap: 0.625rem;
 }
 
-.cd-icon { font-size: 1.25rem; color: #dc2626; }
+.cd-icon { font-size: 1.25rem; color: var(--color-error); }
 
 .cd-title {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 600;
-  color: #dc2626;
+  color: var(--color-error);
 }
 
 .cd-description {
@@ -56,30 +51,22 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  color: #7f1d1d;
+  color: var(--color-error-dark);
 }
 
-@media (prefers-color-scheme: dark) {
-  .cd-consequences { color: #fca5a5; }
+[data-theme="dark"] .cd-consequences {
+  color: var(--color-error);
 }
 
 .cd-warning {
   margin: 0;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #b45309;
-  background: #fef9c3;
-  border: 1px solid #fde68a;
+  color: var(--color-warning-dark);
+  background: var(--color-warning-light);
+  border: 1px solid var(--color-warning);
   border-radius: 0.25rem;
   padding: 0.5rem 0.75rem;
-}
-
-@media (prefers-color-scheme: dark) {
-  .cd-warning {
-    background: #1a1200;
-    border-color: #713f12;
-    color: #fde047;
-  }
 }
 
 .cd-actions {
@@ -100,18 +87,24 @@
 
 .cd-btn--cancel {
   background: transparent;
-  border-color: #d1d5db;
+  border-color: var(--color-border);
   color: inherit;
 }
-.cd-btn--cancel:hover { background: #f3f4f6; }
+
+.cd-btn--cancel:hover {
+  background: var(--color-surface);
+}
 
 .cd-btn--confirm {
-  background: #dc2626;
-  color: #fff;
+  background: var(--color-error);
+  color: var(--color-text-inverse);
 }
-.cd-btn--confirm:hover { background: #b91c1c; }
+
+.cd-btn--confirm:hover {
+  background: var(--color-error-dark);
+}
 
 .cd-btn:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--color-info);
   outline-offset: 2px;
 }

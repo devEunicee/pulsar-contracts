@@ -1,17 +1,21 @@
 import express from "express";
 import { errorMiddleware } from "./middleware/errors.js";
-import { securityHeaders } from "./middleware/securityHeaders.js";
+import { corsMiddleware } from "./middleware/cors.js";
 import merchantsRouter from "./routes/merchants.js";
 import paymentsRouter from "./routes/payments.js";
+import tfaRouter from "./routes/tfa.js";
 
 const app = express();
 
-app.use(securityHeaders());
+// Apply CORS before any route handlers so preflight requests are handled first.
+app.use(corsMiddleware);
+
 app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 app.use("/api/merchants", merchantsRouter);
 app.use("/api/payments", paymentsRouter);
+app.use("/api/auth/2fa", tfaRouter);
 
 app.use(errorMiddleware);
 

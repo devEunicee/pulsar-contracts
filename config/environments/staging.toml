@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: MIT
+#
+# Staging environment configuration for Pulsar.
+# Targets Stellar testnet with real-data volumes.
+# Secrets must be provided via environment variables — never hardcode keys here.
+
+[network]
+name = "testnet"
+rpc_url = "https://soroban-testnet.stellar.org"
+horizon_url = "https://horizon-testnet.stellar.org"
+passphrase = "Test SDF Network ; September 2015"
+
+[contract]
+# Set via CI/CD pipeline:  export CONTRACT_ID=<deployed address>
+# id = ""
+
+[admin]
+account = "staging-admin"
+# Secret loaded from STAGING_ADMIN_SECRET env var
+
+[token]
+account = "staging-token-issuer"
+code = "USDC"
+mint_amount = 1000000
+
+[merchants]
+count = 5
+categories = ["Retail", "Food", "Services", "Digital", "Other"]
+name_prefix = "Staging Merchant"
+
+[payments]
+count = 50
+amount_min = 100000
+amount_max = 5000000
+description_prefix = "Staging payment"
+
+[refunds]
+count = 10
+amount_percentage = 30
+reason = "Staging refund"
+
+[payer]
+account = "staging-payer"
+initial_balance = 100000000
+
+[logging]
+level = "info"
+verbose = false
+
+[monitoring]
+enabled = true
+# Metrics endpoint (e.g., Prometheus push gateway or DataDog agent)
+# endpoint set via MONITORING_ENDPOINT env var
+alert_on_failed_payments = true
+alert_threshold_consecutive_failures = 3
+
+[backup]
+enabled = true
+# Backup ledger snapshots to S3-compatible storage
+# Bucket set via BACKUP_BUCKET env var
+schedule = "0 2 * * *"   # daily at 02:00 UTC
+retention_days = 14
+
+[dns]
+# Staging API gateway subdomain
+# api_domain = "api-staging.yourapp.com"
