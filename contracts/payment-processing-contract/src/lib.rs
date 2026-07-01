@@ -86,11 +86,17 @@ impl PaymentContract {
     /// - `category` — Merchant category enum.
     /// - `signing_public_key` — Optional ed25519 public key used to verify
     ///   payment signatures. Pass `None` to skip signature verification.
+    ///   If `Some`, the key must be a non-zero 32-byte value; an all-zeros
+    ///   key is rejected as obviously invalid. Note: further cryptographic
+    ///   validity (i.e. whether the bytes form a valid curve point) is **not**
+    ///   enforced on-chain — callers should verify key validity off-chain
+    ///   before registration.
     ///
     /// # Errors
     /// - [`PaymentError::MerchantAlreadyRegistered`] if the address is already registered.
     /// - [`PaymentError::Unauthorized`] if whitelist mode is on and the address is not approved.
-    /// - [`PaymentError::InvalidInput`] if any string field exceeds its length limit.
+    /// - [`PaymentError::InvalidInput`] if any string field exceeds its length limit, or if
+    ///   `signing_public_key` is `Some` and is all-zeros.
     pub fn register_merchant(
         env: Env,
         merchant_address: Address,
@@ -111,6 +117,7 @@ impl PaymentContract {
             return Err(PaymentError::Unauthorized);
         }
         helper::validate_merchant_fields(&name, &description, &contact_info)?;
+        helper::validate_signing_public_key(&signing_public_key, &env)?;
         let merchant = Merchant {
             address: merchant_address.clone(),
             name,
