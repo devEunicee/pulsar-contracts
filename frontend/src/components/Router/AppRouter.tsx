@@ -9,6 +9,8 @@
  *   2. <React.Suspense> shows a skeleton while the chunk loads.
  *   3. ChunkErrorBoundary catches network errors (e.g. CDN 404 after a deploy).
  *   4. Sibling chunks are prefetched after idle so navigation feels instant.
+ *
+ * Related: responsive mobile navigation menu (#240).
  */
 import React from "react";
 import { ThemeToggle } from "../../theme";
