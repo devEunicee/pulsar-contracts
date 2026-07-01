@@ -4,20 +4,13 @@
 
 extern crate alloc;
 
-mod archival;
-mod audit;
-mod webhook;
 mod error;
 mod helper;
-mod request_validation;
-mod response_formatting;
 mod storage;
 mod types;
 
 #[cfg(test)]
-mod repro_tests;
-#[cfg(test)]
-mod prop_tests;
+mod global_stats_tests;
 
 use alloc::vec::Vec as RustVec;
 use soroban_sdk::{
@@ -29,9 +22,8 @@ use storage::{REFUND_GRACE_BUFFER, REFUND_WINDOW};
 use types::{
     DataKey, GlobalStats, Merchant, MerchantCategory, MerchantStats, MultisigPayment,
     PaymentFilter, PaymentOrder, PaymentPage, PaymentRecord, PaymentStatus, RefundRecord,
-    RefundStatus, SortField, SortOrder,
+    RefundStatus, SortField, SortOrder, SubscriptionPlan, SubscriptionState, SubscriptionStatus,
 };
-use data_quality::QualityReport;
 
 #[contract]
 pub struct PaymentContract;
@@ -310,85 +302,58 @@ impl PaymentContract {
     pub fn create_subscription(
         env: Env,
         payer: Address,
+        merchant: Address,
         subscription_id: Bytes,
-        merchant_address: Address,
-        token: Address,
-        amount: i128,
-        interval_seconds: u64,
-        first_payment_at: u64,
-        deposit_amount: i128,
+        plan: SubscriptionPlan,
     ) -> Result<(), PaymentError> {
         payer.require_auth();
-        helper::validate_amount(amount)?;
-        helper::validate_amount(deposit_amount)?;
-        if deposit_amount < amount {
+        if plan.interval == 0 {
             return Err(PaymentError::InvalidInput);
         }
-        if interval_seconds == 0 {
-            return Err(PaymentError::InvalidInput);
+        helper::validate_amount(plan.amount)?;
+        let m = storage::get_merchant(&env, &merchant).ok_or(PaymentError::MerchantNotFound)?;
+        if !m.active {
+            return Err(PaymentError::MerchantInactive);
         }
         if storage::get_subscription(&env, &subscription_id).is_some() {
             return Err(PaymentError::SubscriptionAlreadyExists);
         }
-
-        let merchant = storage::get_merchant(&env, &merchant_address)
-            .ok_or(PaymentError::MerchantNotFound)?;
-        if !merchant.active {
-            return Err(PaymentError::MerchantInactive);
-        }
-
-        let contract_address = env.current_contract_address();
-        let token_client = token::Client::new(&env, &token);
-        token_client.transfer(&payer, &contract_address, &deposit_amount);
-
-        let subscription = SubscriptionPlan {
+        let sub = SubscriptionState {
             subscription_id: subscription_id.clone(),
-            merchant_address: merchant_address.clone(),
-            payer: payer.clone(),
-            token: token.clone(),
-            amount,
-            interval_seconds,
-            next_payment_at: first_payment_at,
+            payer,
+            merchant,
+            plan,
             status: SubscriptionStatus::Active,
             created_at: env.ledger().timestamp(),
+            last_charged_at: 0,
         };
-        storage::save_subscription(&env, &subscription);
+        storage::save_subscription(&env, &sub);
         env.events().publish(
             (String::from_str(&env, "subscription_created"),),
-            subscription_id.clone(),
+            subscription_id,
         );
         Ok(())
     }
 
     pub fn cancel_subscription(
         env: Env,
-        caller: Address,
+        payer: Address,
         subscription_id: Bytes,
     ) -> Result<(), PaymentError> {
-        caller.require_auth();
-        let mut subscription = storage::get_subscription(&env, &subscription_id)
+        payer.require_auth();
+        let mut sub = storage::get_subscription(&env, &subscription_id)
             .ok_or(PaymentError::SubscriptionNotFound)?;
-        let admin = storage::get_admin(&env);
-        if caller != subscription.payer
-            && caller != subscription.merchant_address
-            && admin.as_ref() != Some(&caller)
-        {
+        if sub.payer != payer {
             return Err(PaymentError::Unauthorized);
         }
-        if subscription.status == SubscriptionStatus::Cancelled {
-            return Err(PaymentError::SubscriptionAlreadyCancelled);
+        if sub.status != SubscriptionStatus::Active {
+            return Err(PaymentError::SubscriptionNotActive);
         }
-        subscription.status = SubscriptionStatus::Cancelled;
-        storage::save_subscription(&env, &subscription);
+        sub.status = SubscriptionStatus::Cancelled;
+        storage::save_subscription(&env, &sub);
         env.events().publish(
             (String::from_str(&env, "subscription_cancelled"),),
-            (
-                subscription_id,
-                subscription.payer,
-                subscription.merchant_address,
-                subscription.amount,
-                subscription.token,
-            ),
+            subscription_id,
         );
         Ok(())
     }
@@ -397,63 +362,39 @@ impl PaymentContract {
         env: Env,
         caller: Address,
         subscription_id: Bytes,
-        order_id: Bytes,
     ) -> Result<(), PaymentError> {
         caller.require_auth();
-        let mut subscription = storage::get_subscription(&env, &subscription_id)
+        let mut sub = storage::get_subscription(&env, &subscription_id)
             .ok_or(PaymentError::SubscriptionNotFound)?;
-        if subscription.status != SubscriptionStatus::Active {
-            return Err(PaymentError::SubscriptionAlreadyCancelled);
+        if sub.status != SubscriptionStatus::Active {
+            return Err(PaymentError::SubscriptionNotActive);
         }
         let now = env.ledger().timestamp();
-        if now < subscription.next_payment_at {
-            return Err(PaymentError::InvalidInput);
+        if sub.last_charged_at > 0 && now < sub.last_charged_at + sub.plan.interval {
+            return Err(PaymentError::SubscriptionIntervalNotElapsed);
         }
-        if storage::get_payment(&env, &order_id).is_some() {
-            return Err(PaymentError::PaymentAlreadyExists);
+        let m = storage::get_merchant(&env, &sub.merchant)
+            .ok_or(PaymentError::MerchantNotFound)?;
+        if !m.active {
+            return Err(PaymentError::MerchantInactive);
         }
-
-        let contract_address = env.current_contract_address();
-        let token_client = token::Client::new(&env, &subscription.token);
-        token_client.transfer(
-            &contract_address,
-            &subscription.merchant_address,
-            &subscription.amount,
-        );
-
-        let record = PaymentRecord {
-            order_id: order_id.clone(),
-            merchant_address: subscription.merchant_address.clone(),
-            payer: subscription.payer.clone(),
-            token: subscription.token.clone(),
-            amount: subscription.amount,
-            refunded_amount: 0,
-            status: PaymentStatus::Completed,
-            paid_at: now,
-        };
-        storage::save_payment(&env, &record);
-        storage::push_merchant_payment_id(&env, &subscription.merchant_address, &order_id);
-        storage::push_payer_payment_id(&env, &subscription.payer, &order_id);
-        storage::push_global_payment_id(&env, &order_id);
-        storage::increment_payment_stats(&env, subscription.amount);
-
-        subscription.next_payment_at = subscription
-            .next_payment_at
-            .checked_add(subscription.interval_seconds)
-            .ok_or(PaymentError::ArithmeticError)?;
-        storage::save_subscription(&env, &subscription);
-
+        let token_client = token::Client::new(&env, &sub.plan.token);
+        token_client.transfer(&sub.payer, &sub.merchant, &sub.plan.amount);
+        sub.last_charged_at = now;
+        storage::save_subscription(&env, &sub);
         env.events().publish(
-            (String::from_str(&env, "subscription_charged"),),
-            (
-                subscription_id,
-                subscription.payer,
-                subscription.merchant_address,
-                subscription.amount,
-                subscription.token,
-            ),
+            (String::from_str(&env, "subscription_payment_processed"),),
+            (subscription_id, sub.plan.amount, now),
         );
         Ok(())
+    }
+
+    pub fn get_subscription(
+        env: Env,
+        subscription_id: Bytes,
+    ) -> Result<SubscriptionState, PaymentError> {
+        storage::get_subscription(&env, &subscription_id)
+            .ok_or(PaymentError::SubscriptionNotFound)
     }
     // ── Payment queries ───────────────────────────────────────────────────────
 
@@ -618,19 +559,11 @@ impl PaymentContract {
 
     pub fn get_merchant_stats(
         env: Env,
-        caller: Address,
         merchant: Address,
         date_start: Option<u64>,
         date_end: Option<u64>,
     ) -> Result<MerchantStats, PaymentError> {
-        caller.require_auth();
-        // Merchant can query their own stats, or admin can query any merchant
-        if caller != merchant {
-            let mut admins = Vec::new(&env);
-            admins.push_back(caller.clone());
-            helper::require_multi_admin(&env, admins)?;
-        }
-
+        merchant.require_auth();
         // If no date filter, return cached stats
         if date_start.is_none() && date_end.is_none() {
             return Ok(storage::get_merchant_stats(&env, &merchant));
@@ -955,6 +888,7 @@ impl PaymentContract {
             status: RefundStatus::Pending,
             initiated_by: caller.clone(),
             initiated_at: now,
+            dispute_deadline: record.paid_at + REFUND_WINDOW + storage::DISPUTE_WINDOW,
             dispute_reason: String::from_str(&env, ""),
         };
         storage::save_refund(&env, &refund);
@@ -1384,109 +1318,6 @@ impl PaymentContract {
         Ok(())
     }
 
-    // ── Dispute resolution ────────────────────────────────────────────────────
-
-    /// Escalate a merchant-rejected refund to admin arbitration.
-    ///
-    /// Only the original payer may call this, and only when the refund is in
-    /// `Rejected` state. Transitions the refund to `Disputed` and persists the
-    /// dispute reason. Emits `refund_disputed`.
-    pub fn dispute_refund(
-        env: Env,
-        caller: Address,
-        refund_id: Bytes,
-        reason: String,
-    ) -> Result<(), PaymentError> {
-        caller.require_auth();
-
-        if reason.len() > 256 {
-            return Err(PaymentError::InvalidInput);
-        }
-
-        let mut refund =
-            storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
-
-        // Only the original payer may dispute.
-        if caller != refund.initiated_by {
-            return Err(PaymentError::DisputeUnauthorized);
-        }
-
-        // Refund must be in Rejected state.
-        if refund.status != RefundStatus::Rejected {
-            return Err(PaymentError::RefundNotRejected);
-        }
-
-        refund.status = RefundStatus::Disputed;
-        refund.dispute_reason = reason.clone();
-        storage::save_refund(&env, &refund);
-
-        env.events().publish(
-            (String::from_str(&env, "refund_disputed"),),
-            (refund_id, caller, reason),
-        );
-        Ok(())
-    }
-
-    /// Admin-only: resolve a disputed refund.
-    ///
-    /// - `approve = true`  → override the merchant rejection, execute payout to
-    ///   payer, and mark the refund `Completed`.
-    /// - `approve = false` → uphold the merchant rejection, mark the refund
-    ///   `Rejected` (closed), no payout.
-    ///
-    /// Emits `dispute_resolved` with the resolver identity and outcome.
-    pub fn resolve_dispute(
-        env: Env,
-        admins: Vec<Address>,
-        refund_id: Bytes,
-        approve: bool,
-    ) -> Result<(), PaymentError> {
-        helper::require_multi_admin(&env, admins.clone())?;
-
-        let mut refund =
-            storage::get_refund(&env, &refund_id).ok_or(PaymentError::RefundNotFound)?;
-
-        if refund.status != RefundStatus::Disputed {
-            return Err(PaymentError::RefundNotDisputed);
-        }
-
-        let mut record = storage::get_payment(&env, &refund.order_id)
-            .ok_or(PaymentError::PaymentNotFound)?;
-
-        // Identify the resolving admin for event metadata.
-        let resolver = admins.get(0).unwrap();
-
-        if approve {
-            // Execute payout: merchant → payer.
-            let new_total = record.refunded_amount + refund.amount;
-            record.refunded_amount = new_total;
-            record.status = if new_total == record.amount {
-                PaymentStatus::FullyRefunded
-            } else {
-                PaymentStatus::PartiallyRefunded
-            };
-            storage::save_payment(&env, &record);
-
-            refund.status = RefundStatus::Completed;
-            storage::save_refund(&env, &refund);
-            storage::push_all_refund_id(&env, &refund_id);
-            storage::increment_refund_stats(&env, refund.amount)?;
-
-            let token_client = token::Client::new(&env, &record.token);
-            token_client.transfer(&record.merchant_address, &record.payer, &refund.amount);
-        } else {
-            // Uphold rejection — close the dispute with no payout.
-            refund.status = RefundStatus::Rejected;
-            storage::save_refund(&env, &refund);
-        }
-
-        env.events().publish(
-            (String::from_str(&env, "dispute_resolved"),),
-            (refund_id, resolver, approve),
-        );
-        Ok(())
-    }
-
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     fn paginate_payments(
@@ -1499,7 +1330,6 @@ impl PaymentContract {
         sort_order: SortOrder,
     ) -> Result<PaymentPage, PaymentError> {
         let cap = limit.min(100) as usize;
-        // Collect and filter all matching records first.
         let mut records: RustVec<PaymentRecord> = RustVec::new();
         for id in ids.iter() {
             if let Some(record) = storage::get_payment(env, &id) {
@@ -1512,7 +1342,6 @@ impl PaymentContract {
                 }
             }
         }
-        // Sort all matching records.
         records.sort_by(|a, b| {
             let (v1, v2) = match sort_field {
                 SortField::Date => (a.paid_at as i128, b.paid_at as i128),
@@ -1524,7 +1353,6 @@ impl PaymentContract {
             }
         });
         let total = records.len() as u32;
-        // Apply cursor: start after the record whose order_id matches the cursor.
         let start = if let Some(ref cur) = cursor {
             records
                 .iter()
@@ -1538,84 +1366,17 @@ impl PaymentContract {
         let next_cursor = if slice.len() > cap {
             slice.get(cap - 1).map(|r| r.order_id.clone())
         } else {
-            DeliveryStatus::Failed
+            None
         };
         let mut page: Vec<PaymentRecord> = Vec::new(env);
         for i in 0..(slice.len().min(cap)) {
             page.push_back(slice[i].clone());
         }
 
-        notif.status = DeliveryStatus::Pending;
-        storage::save_notification(&env, &notif);
-
-        env.events().publish(
-            (String::from_str(&env, "notification_retried"),),
-            notification_id,
-        );
-        Ok(())
-    }
-
-    /// Set notification preferences for the calling recipient.
-    pub fn set_notification_preferences(
-        env: Env,
-        recipient: Address,
-        enabled_channels: Vec<NotificationChannel>,
-        disabled_events: Vec<NotificationEvent>,
-        dnd_start_hour: Option<u32>,
-        dnd_end_hour: Option<u32>,
-    ) -> Result<(), PaymentError> {
-        recipient.require_auth();
-
-        // Validate DND hours (0-23)
-        if let Some(h) = dnd_start_hour {
-            if h > 23 {
-                return Err(PaymentError::InvalidInput);
-            }
-        }
-        if let Some(h) = dnd_end_hour {
-            if h > 23 {
-                return Err(PaymentError::InvalidInput);
-            }
-        }
-
-        let prefs = NotificationPreferences {
-            recipient: recipient.clone(),
-            enabled_channels,
-            disabled_events,
-            dnd_start_hour,
-            dnd_end_hour,
-        };
-        dispute.resolved_at = Some(env.ledger().timestamp());
-        dispute.resolution_notes = resolution_notes;
-
-        storage::save_notification_prefs(&env, &prefs);
-
-        env.events().publish(
-            (String::from_str(&env, "notification_prefs_updated"),),
-            recipient,
-        );
-        Ok(())
-    }
-
-    /// Get notification preferences for a recipient.
-    pub fn get_notification_preferences(
-        env: Env,
-        recipient: Address,
-    ) -> Option<NotificationPreferences> {
-        storage::get_notification_prefs(&env, &recipient)
-    }
-
-    /// Get a single notification record by ID.
-    pub fn get_notification(
-        env: Env,
-        notification_id: Bytes,
-    ) -> Result<NotificationRecord, PaymentError> {
-        storage::get_notification(&env, &notification_id)
-            .ok_or(PaymentError::NotificationNotFound)
-    }
-
-    /// Get all notification IDs for a recipient (for history tracking).
-    pub fn get_recipient_notifications(env: Env, recipient: Address) -> Vec<Bytes> {
-        storage::get_recipient_notification_ids(&env, &recipient)
+        Ok(PaymentPage {
+            records: page,
+            next_cursor,
+            total,
+        })
     }
 }
