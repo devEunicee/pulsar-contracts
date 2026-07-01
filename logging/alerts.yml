@@ -1,0 +1,11 @@
+groups:
+  - name: pulsar-errors
+    rules:
+      - alert: HighErrorRate
+        expr: sum by (service) (rate(log_messages{level="error"}[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Repeated application errors detected"
+          description: "The service is emitting elevated error logs. Investigate the source quickly."

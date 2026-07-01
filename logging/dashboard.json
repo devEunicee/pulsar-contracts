@@ -1,0 +1,23 @@
+{
+  "title": "Pulsar centralized logs",
+  "panels": [
+    {
+      "title": "Error rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(log_messages{level=\"error\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "title": "Log volume",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(log_messages[5m]))"
+        }
+      ]
+    }
+  ]
+}
