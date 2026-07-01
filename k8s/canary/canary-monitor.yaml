@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: canary-monitor
+  namespace: pulsar
+spec:
+  schedule: "*/5 * * * *"   # every 5 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: canary-monitor
+          restartPolicy: OnFailure
+          containers:
+            - name: canary-monitor
+              image: bitnami/kubectl:latest
+              env:
+                - name: NAMESPACE
+                  value: pulsar
+                - name: ERROR_THRESHOLD
+                  value: "5"
+                - name: METRICS_URL
+                  value: "http://prometheus.monitoring.svc.cluster.local:9090"
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  apt-get install -y curl python3 bc 2>/dev/null
+                  bash /scripts/rollback.sh
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+          volumes:
+            - name: scripts
+              configMap:
+                name: canary-scripts
+                defaultMode: 0755
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: canary-monitor
+  namespace: pulsar
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: canary-scaler
+  namespace: pulsar
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: canary-scaler
+  namespace: pulsar
+subjects:
+  - kind: ServiceAccount
+    name: canary-monitor
+    namespace: pulsar
+roleRef:
+  kind: Role
+  name: canary-scaler
+  apiGroup: rbac.authorization.k8s.io
